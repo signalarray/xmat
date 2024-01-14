@@ -9,7 +9,8 @@ classdef Header < handle
     k_INTX_SIZE = 4
     k_MAX_BLOCK_NAME_LEN = 32
     k_MAX_TYPE_NAME_LEN = 8
-    k_MAX_NDIM = 4
+    k_MAX_NDIM = 8
+    k_SIZEB = 8 + 2 * xmat.Header.k_FORMAT_SIGNATURE_SIZE + 4;
   end
 
 
@@ -20,6 +21,7 @@ classdef Header < handle
     max_type_name_len
     max_ndim
 
+    total_size
     intx_type
     intx_typename
   end
@@ -28,20 +30,29 @@ classdef Header < handle
   methods (Static)
     function h = read(is)
       % is: input stream/file
+
+      total_size     = double(is.read(8, 1, 'uint64'));
       sig0 = is.read(1, xmat.Header.k_FORMAT_SIGNATURE_SIZE, 'char*1')';
       if ~strcmp(sig0, xmat.Header.k_FORMAT_SIGNATURE)
         error('xmat.header errof. wrong signature');
       end
-      intx_size = is.read(1, 1, 'uint8');
-      maxblocknamelen = is.read(1, 1, 'uint8');
-      maxtypenamelen = is.read(1, 1, 'uint8');
-      maxndim = is.read(1, 1, 'uint8');
+      intx_size       = double(is.read(1, 1, 'uint8'));
+      maxblocknamelen = double(is.read(1, 1, 'uint8'));
+      maxtypenamelen  = double(is.read(1, 1, 'uint8'));
+      maxndim         = double(is.read(1, 1, 'uint8'));
       sig1 = is.read(1, xmat.Header.k_FORMAT_SIGNATURE_SIZE, 'char*1')';
       if ~strcmp(sig0, sig1)
         error('xmat.header error. wrong second signature');
       end
+
       h = xmat.Header(sig0, intx_size, maxblocknamelen, maxtypenamelen, maxndim);
+      h.total_size = total_size;
     end
+
+
+    function n = byte_size()
+      n = xmat.Header.k_SIZEB;
+    end    
   end
 
   
@@ -76,18 +87,14 @@ classdef Header < handle
 
    function write(obj, os)
       % os: output stream/file
+      os.write(uint64(0));
       os.write(xmat.Header.k_FORMAT_SIGNATURE);
       os.write(uint8(obj.intx_size));
       os.write(uint8(obj.max_block_name_len));
       os.write(uint8(obj.max_type_name_len));
       os.write(uint8(obj.max_ndim));
       os.write(xmat.Header.k_FORMAT_SIGNATURE);
-    end
-
-
-    function n = byte_size(obj)
-      n = 2 * xmat.Header.FORMAT_SIGNATURE_SIZE + 1 + 3 * obj.intx_size;
-    end
+   end
   end
 end
 

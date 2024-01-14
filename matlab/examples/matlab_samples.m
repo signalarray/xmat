@@ -9,9 +9,9 @@ fclose('all');
 fprintf('%s\n', folder_script);
 fprintf('%s\n', filename_script);
 
-folder_data = fullfile(folder_script, '..', 'data');
+folder_data = fullfile(folder_script, '..', 'temp');
 
-sample_2();
+sample_3();
 
 
   function sample_0()
@@ -48,7 +48,7 @@ sample_2();
 
 
   function sample_2()
-    fprintf('sample_2: test xmat.StreamFile\n');
+    fprintf('sample_2: test xmat.StreamBytes\n');
 
     os = xmat.StreamBytes('w');
     
@@ -62,18 +62,47 @@ sample_2();
 
   
   function sample_3()
-    fprintf('sample_3: test xmat.Save');
+    fprintf('sample_3: test xmat.Save\n');
+    filename_out = fullfile(folder_data, 'sample_2.xmat');
+    
+    mode = 'f';  % {'b', 'f'}
+    if mode == 'b'
+      xout = xmat.Save.bytes();
+    else
+      xout = xmat.Save.file(filename_out);
+    end
 
-    xout = xmat.Save.bytes();
-    xout.add('field_0', 1:10);
-    % xout.add('field_1', randi(8, [3, 5]));
-    % xout.add('field_2', randi(8, [2, 3]), 'uint8');
+    xout.save('field_0', uint8(1:4));
+    xout.save('field_1', randi(8, [3, 5]));
+    xout.save('field_2', randi(8, [2, 3], 'uint8'));
+    xout.save('field_3', complex(1:8, 8:-1:1));
+    xout.save('field_4', 'asdads');
     xout.close();
+
+    if mode == 'b'
+      xin = xmat.Load.bytes(xout.ostream.buff);
+    else
+      xin = xmat.Load.file(filename_out);
+    end
+    disp(xin.map)
+    
+    a0 = xin.load('field_0')
+    a1 = xin.load('field_1')
+    a2 = xin.load('field_2')
+    a3 = xin.load('field_3')
+    a4 = xin.load('field_4')
+    
+    if mode == 'b'
+      % load Header and Blocks in separate way
+      hbuff = xout.ostream.buff(1:xmat.Header.k_SIZEB);
+      lbuff = xout.ostream.buff(xmat.Header.k_SIZEB+1:end);
+      
+      h = xmat.Header.read(xmat.StreamBytes('r', hbuff));
+      xin2 = xmat.Load(xmat.StreamBytes('r', lbuff), h);
+      disp(xin2.map)
+      a0 = xin2.load('field_0')
+    end
   end
 end
-
-
-
-
 
 

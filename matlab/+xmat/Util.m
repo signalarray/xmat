@@ -4,9 +4,23 @@ classdef Util
   %
 
   properties (Constant)
-    tbyte = 'bit8';
-    uintmap = {@uint8, @uint16, 0, @uint32, 0, 0, 0, @uint64};
-    uintmap_char = {'uint8', 'uint16', 0, 'uint32', 0, 0, 0, 'uint64'};
+    uintmap = {@uint8, @uint16, [], @uint32, [], [], [], @uint64};
+    uintmap_char = {'uint8', 'uint16', '', 'uint32', '', '', '', 'uint64'};
+
+    k_TYPES_MAP_NATIVE = struct( ...
+      'char',   {{'qchar', 1}}, ...
+      'int8',   {{'xi08', 1}}, ...
+      'int16',  {{'xi16', 2}}, ...
+      'int32',  {{'xi32', 4}}, ...
+      'int64',  {{'xi64', 8}}, ...
+      'uint8',  {{'xu08', 1}}, ...
+      'uint16', {{'xu16', 2}}, ...
+      'uint32', {{'xu32', 4}}, ...
+      'uint64', {{'xu64', 8}}, ...
+      'single', {{'xf32', 4}}, ...
+      'double', {{'xf64', 8}});
+
+    k_TYPES_MAP_XMAT = make_type_info_table();
   end
 
   methods (Static)
@@ -30,53 +44,37 @@ classdef Util
     end
 
 
-    function s = read_string(is, len, order)
-      % read ASCII string
-      % len: string length
-      if nargin < 3
-        order = 'little';
+    function typename = native2xmat_type(A)
+      class_ = class(A);
+      typename = xmat.Util.k_TYPES_MAP_NATIVE.(class_){1};
+      if ischar(A) || isstring(A)
+        return
       end
-      s = fread(is, len, 'bit8=>char')';
+
+      if isnumeric(A) && isreal(A)
+        typename(1) = 'r';
+      else
+        typename(1) = 'c';
+      end
     end
+  end
+end
 
 
-    function write_string(os, value, order)
-      % write string as ASCII
-      % Note: doesn't add '0' character to the end
-      if nargin < 3
-        order = 'little';
-      end
-      fwrite(os, value);
-    end
-
-
-    function num = read_uintx(is, len, order)
-      if nargin < 3
-        order = 'little';
-      end
-      % num = fread(is, 1, [xmat.Util.uintmap_char{len} '=>' xmat.Util.uintmap_char{len}]);
-      num0 = fread(is, len, 'uint8=>uint8');
-      num = typecast(num0, xmat.Util.uintmap_char{len});
-    end
-
-
-    function write_uintx(os, value, len, order)
-      if nargin < 3
-        order = 'little';
-      end
-      if ~isscalar(value)
-        error('value must be a scalar');
-      end
-      val = xmat.Util.uintmap{len}(value);
-      num = typecast(val, 'uint8');
-      fwrite(os, num, 'uint8');
-    end
-
-
-    function read_block_buffer(buff, block, order)
-      if nargin < 3
-        order = 'little';
-      end
+function S = make_type_info_table()
+  S = struct();
+  fields_ = fields(xmat.Util.k_TYPES_MAP_NATIVE);
+  for n = 1:length(fields_)
+    a = fields_{n};
+    b = xmat.Util.k_TYPES_MAP_NATIVE.(a);
+    key = b{1};
+    if key(1) == 'q'
+      S.(key) = {a, b{2}};
+    else
+      key(1) = 'r';
+      S.(key) = {a, b{2}};
+      key(1) = 'c';
+      S.(key) = {a, 2*b{2}};
     end
   end
 end
