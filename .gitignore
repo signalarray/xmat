@@ -1,3 +1,10 @@
-temp
-.vscode
+# char `/` mark just folders in the root of project
+/build*/
+
+# every folder with name like: _folder/, folder/_folder
+**/_*
+
+# util folders like: .vscode/, .idea/
+**/.*/
+
 *.asv

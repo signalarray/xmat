@@ -9,7 +9,7 @@ fclose('all');
 fprintf('%s\n', folder_script);
 fprintf('%s\n', filename_script);
 
-folder_data = fullfile(folder_script, '..', 'temp');
+folder_data = fullfile(folder_script, '..', '..', 'data');
 
 sample_3();
 
