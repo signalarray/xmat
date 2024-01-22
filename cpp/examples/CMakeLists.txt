@@ -3,9 +3,9 @@
 # -----------------------
 add_executable(samples_xarr samples_xarr.cpp)
 
-# using_file.cpp
+# samples_xmat.cpp
 # --------------
-add_executable(using_file using_file.cpp)
+add_executable(samples_xmat samples_xmat.cpp)
 
 # using_socket_client.cpp
 # -----------------------

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cassert>
 #include <cmath>
+#include <iostream>
 #include <array>
 #include <initializer_list>
 #include <algorithm>
@@ -12,7 +13,7 @@
 namespace xmat {
 
 using uint = std::size_t;   // just to have short name
-const uint kMaxNDim = 4;
+const uint kMaxNDimIndex = 4;
 
 enum class Order: char {
   C = 'C',    // C-language style order: by rows
@@ -20,7 +21,7 @@ enum class Order: char {
 };
 
 
-using IndexBase = std::array<uint, kMaxNDim>;
+using IndexBase = std::array<uint, kMaxNDimIndex>;
 
 class Index : public IndexBase {
  public:
@@ -32,8 +33,8 @@ class Index : public IndexBase {
   Index(std::initializer_list<uint> shape) {
     fill(0);
     const uint n0 = shape.size();
-    assert(n0 <= kMaxNDim);
-    const uint n1 = std::min(n0, kMaxNDim);
+    assert(n0 <= kMaxNDimIndex);
+    const uint n1 = std::min(n0, kMaxNDimIndex);
     const auto cend = shape.begin() + n1;
     auto out = this->begin();
     for (auto iter = shape.begin(); iter != cend; ++iter, ++out) {
@@ -60,7 +61,7 @@ class Index : public IndexBase {
 class Map {
  public:
 
-  Map() : ndim(0) { init(); }
+  Map() { init(); }
   Map(const Index& shape) : ndim(shape.ndim()), shape(shape) { init(); }
   Map(uint sz0) : Map(Index({sz0})) { }
   Map(uint sz0, uint sz1) : Map(Index({sz0, sz1})) { }
@@ -68,7 +69,7 @@ class Map {
 
   uint at(const Index& idx) const {
     uint I = 0;
-    for (uint n = 0; n < kMaxNDim; ++n) {
+    for (uint n = 0; n < ndim; ++n) {
       const uint in = idx[n];
       assert(in < shape[n]);
       I += in * stride[n];
@@ -125,8 +126,51 @@ class Map {
 template<typename T>
 class Array {
  public:
+  using value_type = T;
+  using index_type = uint;
+  using idx_t = index_type;
+
+  Array() = default;
+  Array(const Index& shape, T* data=nullptr) : map(shape) { init(data); }
+
+  T& operator()(const Index& idx) {return data[map.at(idx)];}
+  T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) {return data[map.at(i0, i1, i2, i3)];}
+
+  const T& operator()(const Index& idx) const {return data[map.at(idx)];}
+  const T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) const {return data[map.at(i0, i1, i2, i3)];}
+
+  void fill(const T& v) { std::fill(data, data + map.numel, v); }
+
+  // properties
+  Map map;
+  T* /*const*/ data;
+
+ private:
+  void init(T* data_) {
+    if (data_) {
+      data = data_;
+    }
+    else {
+      ptr_ = std::make_unique<T[]>(map.numel);
+      data = ptr_.get();
+    }
+  }
+
+  std::unique_ptr<T[]> ptr_;
+};
 
 
+class Slice {
+ public:
+  uint start = 0;
+  uint stop = 0;
+  uint step = 0;
+};
+
+
+class View {
+ public:
+  Slice s[kMaxNDimIndex];
 };
 
 
@@ -146,5 +190,25 @@ template<typename T>
 class Linspace {
 
 };
+
+
+template<typename T>
+void print(std::ostream& os, const xmat::Array<T>& x, uint space=0) {
+  if (x.map.ndim == 1) {
+      for (uint i = 0, N0 = x.map.shape[0]; i < N0; ++i) {
+        if (space) os << std::setw(space);
+      os << x(i) << ", ";
+    }
+  }
+  if (x.map.ndim == 2) {
+      for (uint i0 = 0, N0 = x.map.shape[0]; i0 < N0; ++i0) {
+        for (uint i1 = 0, N1 = x.map.shape[1]; i1 < N1; ++i1) {
+          if (space) os << std::setw(space);
+        os << x(i0, i1) << ", ";
+      }
+      os << "\n";
+    }
+  }
+}
 
 } // namespace xmat

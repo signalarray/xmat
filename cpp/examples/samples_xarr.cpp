@@ -1,5 +1,6 @@
 #include <cctype>
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <array>
 #include <type_traits>
@@ -20,6 +21,12 @@ void print_x(const xmat::Map& cr) {
   printv(cr.stride);
   // printv(cr.origin);
   // printv(cr.step);
+}
+
+
+template<typename T>
+void print_a(const xmat::Array<T>& x, std::size_t space=0) {
+  xmat::print(*kOutStream, x, space);
 }
 
 
@@ -48,7 +55,7 @@ int sample_0() {
   std::vector<std::vector<int>> x2{{1, 2, 3}, {4, 5, 6, 7}};
   printv(x2);
 
-  print(2, "finish", 0, '=');
+  print(2, "finish", 1, '=');
   return 1;
 }
 
@@ -87,7 +94,7 @@ int sample_1() {
   printv(cr.at(0, 1));
   printv(cr.at(1, 0));
 
-  print(1, "finish", 0, '=');
+  print(1, "finish", 1, '=');
   return 1;
 }
 
@@ -133,24 +140,47 @@ int sample_2() {
   xmat::Map cr01{{4, 3, 2, 1}};
   xmat::Map cr02{3, 2};
 
-  print(1, "finish", 0, '=');
+  print(1, "finish", 1, '=');
   return 1;
 }
 
 
 int sample_3() {
   print("SAMPLE_3", 1);
-  print("using Index and Map", 1, '=');
+  print("using Array", 1, '=');
 
-  print("Map.origin", 0, '-');
-  xmat::Map mp0 = {2, 3};
+  xmat::Array<int> a0({2, 3});
+  printv(a0(0, 0));
+  a0(0, 0) = -32;
+  printv(a0(0, 0));
+  
+  print(1, "print Array", 0, '-');
+  print_a(a0, 4);
 
-  print(1, "finish", 0, '=');
+  print(1, "ways to make Array");
+  xmat::Array<int> a1{{3}, nullptr};
+
+  print(1, "finish", 1, '=');
+  return 1;
+}
+
+
+int sample_4() {
+  print("SAMPLE_4", 1);
+  print("using Array", 1, '=');
+
+
+
+  print(1, "finish", 1, '=');
   return 1;
 }
 }
 
 
 int main() {
+  print("START: " __FILE__, 0, '=');
   sample_2();
+  sample_3();
+  print("END: " __FILE__, 0, '=');
+  return EXIT_SUCCESS;
 }
