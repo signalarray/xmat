@@ -25,7 +25,7 @@ void print_x(const xmat::Map& cr) {
 
 
 template<typename T>
-void print_a(const xmat::Array<T>& x, std::size_t space=0) {
+void print_a(const xmat::Array<T>& x, uint space=0) {
   xmat::print(*kOutStream, x, space);
 }
 

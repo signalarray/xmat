@@ -16,8 +16,8 @@ ru08        1             real unsigned int8
 ru16        2             real unsigned int16
 ru32        4             real unsigned int32
 ru64        8             real unsigned int64
-rf32        4             real float(32)
-rf64        8             real double(64)
+rf32        4             real float32
+rf64        8             real double64
 
 ci08        2             complex signed int8
 ci16        4             complex signed int16
@@ -27,8 +27,8 @@ cu08        2             complex unsigned int8
 cu16        4             complex unsigned int16
 cu32        8             complex unsigned int32
 cu64        16            complex unsigned int64
-cf32        8             complex <float(32), float32>
-cf64        16            complex <double(64), double(64)>
+cf32        8             complex float32
+cf64        16            complex double64
 ```
 
 Format Scheme
@@ -45,9 +45,9 @@ Header:
 
 Block[0]:
   4b block_signature_begin
-  xb name           [h.max_block_name_lenght * b]
-  xb typename       [h.max_type_name_lenght * b]
-  xu shape          [h.max_ndim * u]
+  xb name           [h.max_block_name_lenght * 1b]
+  xb typename       [h.max_type_name_lenght * 1b]
+  xu shape          [h.max_ndim * 1u]
   1u numel
   1b typesize
   1b ndim
