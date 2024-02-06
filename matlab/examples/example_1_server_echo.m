@@ -19,6 +19,8 @@ while 1
 
   if server.NumBytesAvailable
     data = read(server, server.NumBytesAvailable, 'char');
+    
+    % is command `stop`
     if strcmp(data, 'stop')
       fprintf('\n[command]: `stop`\n server closed\n');
       break

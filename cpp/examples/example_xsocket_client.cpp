@@ -10,7 +10,7 @@ std::ostream* kOutStream = &std::cout;
 
 int main() {
   print("START: " __FILE__, 1);
-  print(__PRETTY_FUNCTION__, 1);  
+  print(__PRETTY_FUNCTION__, 1);
   
   std::array<char, xmat::kDefaultMsgLen> buff{};
   int msg_len = 0, out = 0;
@@ -24,7 +24,7 @@ int main() {
     client.connect(2.0);
     
     // -------------------
-    xmat::impl::assign(buff, "first message from C++");
+    xmat::assign(buff, "first message from C++");
     msg_len = std::strlen(buff.begin());
 
     print(1, "send", 0, '-');
@@ -37,9 +37,8 @@ int main() {
     if (out == -1) { print(1, "data wasn't accepted", 0, '*'); }
     else { print_mv("[msg received]: \n", buff.begin()); }
 
-
     // -------------------
-    xmat::impl::assign(buff, "second message from C++");
+    xmat::assign(buff, "second message from C++");
     msg_len = std::strlen(buff.begin());
 
     print(1, "send", 0, '-');
@@ -53,7 +52,7 @@ int main() {
     else { print_mv("[msg received]: \n", buff.begin()); }
 
     // --------------------
-    xmat::impl::assign(buff, "stop");
+    xmat::assign(buff, "stop");
     msg_len = std::strlen(buff.begin());
     print(1, "send command `stop`", 0, '-');
     out = client.send(buff.begin(), msg_len);

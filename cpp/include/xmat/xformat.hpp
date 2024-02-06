@@ -8,10 +8,13 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <complex>
 #include <iterator>
 #include <memory>
 #include <exception>
+
+#include "xutil.hpp"
 
 
 namespace xmat {
@@ -45,7 +48,7 @@ constexpr bool alwaysFalse() { return false; };
 
 template<typename T>
 struct TypeInfo {
-  static_assert(alwaysFalse<T>(), "using not registered data_type");
+  // static_assert(alwaysFalse<T>(), "using not registered data_type");
   static const bool registered = false;
   static const std::uint8_t size = 0;
   // static constexpr char name[kMaxTypeNameLen] = "undef";
@@ -74,19 +77,6 @@ XMAT_ADDTYPE(std::complex<float>,  "cf32");   // complex
 XMAT_ADDTYPE(std::complex<double>, "cf64");
 
 
-// util
-template<std::size_t Size>
-uint assign(std::array<char, Size>& a, const char* s) {
-  const uint n = std::strlen(s);
-  if (n > a.size()) {
-    throw std::runtime_error(__PRETTY_FUNCTION__);
-  }
-  std::copy_n(s, n, a.begin());
-  return n;
-}
-
-
-
 // streams
 // -------
 // StreamBase impl_ <>---------- Stream stream <>--- Output
@@ -94,19 +84,28 @@ uint assign(std::array<char, Size>& a, const char* s) {
 //            <- StreamFileIn
 //            <- StreamBytes
 
-enum class Endian : std::uint8_t { little = 0, big = 1, native = 2 };
-enum class StreamMode : char { in = 'i', out = 'o', undef = 'x' };
+enum class Endian : std::uint8_t { 
+  little = 0, 
+  big = 1, 
+  native = 2 
+};
+
+enum class StreamMode : char {
+  in = 'i',
+  out = 'o',
+  undef = 'x'
+};
 
 class StreamBase {
  public:
   virtual ~StreamBase() {}
 
-  virtual void close() {}
-  virtual uint tell() {return 0;}
-  virtual void seek(std::streamoff off, std::ios::seekdir way) {/*std::ios_base::{beg, cur, end}*/}
-  virtual bool eof() {return false;}
-  virtual uint size() {return 0;}
-  virtual bool is_open() const {return false; }
+  virtual void close() = 0;
+  virtual uint tell() = 0;
+  virtual void seek(std::streamoff off, std::ios::seekdir way) = 0;
+  virtual bool eof() const noexcept = 0;
+  virtual uint size() const noexcept = 0;
+  virtual bool is_open() const noexcept = 0;
 
   virtual void write__(const char* ptr, std::streamsize n) {std::runtime_error("can't write");}
   virtual void read__(char* ptr, std::streamsize n)  {std::runtime_error("can't read");}
@@ -157,9 +156,9 @@ class StreamFileOut : public StreamBase {
   virtual void close() override {os_.close();}
   virtual uint tell() override {return os_.tellp();}
   virtual void seek(std::streamoff off, std::ios_base::seekdir way) override {os_.seekp(off, way);}
-  virtual bool eof() override {return os_.eof();}
-  virtual uint size() override {return 0;}
-  virtual bool is_open() const override {return os_.is_open();}
+  virtual bool eof() const noexcept override {return os_.eof();}
+  virtual uint size() const noexcept override {return 0;}
+  virtual bool is_open() const noexcept override {return os_.is_open();}
 
   virtual void write__(const char* ptr, std::streamsize n) override { os_.write(ptr, n); }
 
@@ -170,7 +169,7 @@ class StreamFileOut : public StreamBase {
 class StreamFileIn : public StreamBase {
  public:
   StreamFileIn() = default;
-  
+
   StreamFileIn(const char* filename) : is_(filename, std::ios::binary) {
     assert(is_.is_open());
     mode_ = StreamMode::in;
@@ -183,9 +182,9 @@ class StreamFileIn : public StreamBase {
   virtual void close() override {is_.close();}
   virtual uint tell() override {return is_.tellg();}
   virtual void seek(std::streamoff off, std::ios_base::seekdir way) override {is_.seekg(off, way);}
-  virtual bool eof() override {return is_.eof();}
-  virtual uint size() override {return 0;}
-  virtual bool is_open() const override {return is_.is_open();}
+  virtual bool eof() const noexcept override {return is_.eof();}
+  virtual uint size() const noexcept override {return 0;}
+  virtual bool is_open() const noexcept override {return is_.is_open();}
 
   virtual void read__(char* ptr, std::streamsize n) override { is_.read(ptr, n); }
 
@@ -199,15 +198,18 @@ class StreamBytes : public StreamBase {
               byte_t* buff, 
               uint buff_size, 
               Endian endian = Endian::native) 
-    : is_open_{true}, buff_{buff}, buff_size_{buff_size}, 
+    : is_open_{true}, buff_{buff}, capcity_{buff_size},
       size_(mode == StreamMode::out ? 0 : buff_size) {
     mode_ = mode; 
     endian_ = endian;
   }
 
+  StreamBytes(StreamMode mode, Endian endian = Endian::native)
+    : StreamBytes{mode, nullptr, 0, endian} {}
+
   // output stream with dynamic buffer
   StreamBytes(Endian endian = Endian::native)
-    : StreamBytes{StreamMode::out, nullptr, 0, endian} { }
+    : StreamBytes{StreamMode::out, nullptr, 0, endian} {}
 
   StreamBytes(const StreamBytes& ) = delete;
   StreamBytes(StreamBytes&& ) = default;
@@ -223,14 +225,14 @@ class StreamBytes : public StreamBase {
     else { assert(false); }
   }
 
-  virtual bool eof() override {return cursor_ = vec_.size();}
-  virtual uint size() override {return vec_.size();}
-  virtual bool is_open() const override {return is_open_;}
+  virtual bool eof() const noexcept override {return cursor_ == vec_.size();}
+  virtual uint size() const noexcept override { return size_; }
+  virtual bool is_open() const noexcept override {return is_open_;}
 
   virtual void write__(const char* ptr, std::streamsize n) override {
     assert(mode_ == StreamMode::out);
     if (buff_) {
-      assert(cursor_ + n <= size_);
+      assert(cursor_ + n <= capcity_);
       if (cursor_ + n < size_) {
         return;
       }
@@ -249,28 +251,48 @@ class StreamBytes : public StreamBase {
   virtual void read__(char* ptr, std::streamsize n) override {
     assert(mode_ == StreamMode::in);
     assert(cursor_ + n <= size_);
-    std::copy_n(buff_ + cursor_, n, ptr);
+    std::copy_n(buff() + cursor_, n, ptr);
     cursor_ += n;
   }
 
+ public: // specific
+  void clear() noexcept { cursor_ = size_ = 0; }
+
+  // change buff size
+  // just for input mode and non-fixed buff
+  void reserve(uint n) {
+    assert(mode_ == StreamMode::in);
+    assert(!isfixed()); 
+    if(!isfixed()) { 
+      vec_.resize(n);
+      size_ = vec_.size();
+    }
+  }
+
  public: // buffer access
-  byte_t* buff() {
-    if (buff_) return buff_;
+  bool isempty() const noexcept { return size_ == 0; }
+  bool isfixed() const noexcept { return buff_; }
+
+  byte_t* buff() noexcept {
+    if (isfixed()) return buff_;
     else return vec_.data();
   }
 
-  const byte_t* buff() const {
-    if (buff_) return buff_;
+  const byte_t* buff() const noexcept {
+    if (isfixed()) return buff_;
     else return vec_.data();
   }
 
-  uint size() const { return size_; }
+  uint capacity() const noexcept {
+    if(isfixed()) return capcity_;
+    else return vec_.size();
+  }
 
-  byte_t* begin() {return buff();}
-  byte_t* end() {return buff() + size_;}
+  byte_t* begin() noexcept { return buff(); }
+  byte_t* end() noexcept { return buff() + size_; }
 
-  const byte_t* cbegin() const {return buff();}
-  const byte_t* cend() const {return buff() + size_;}
+  const byte_t* cbegin() const noexcept {return buff();}
+  const byte_t* cend() const noexcept {return buff() + size_;}
 
  public: // private:
   bool is_open_ = false;
@@ -278,7 +300,7 @@ class StreamBytes : public StreamBase {
   uint size_{0};              // used size
 
   byte_t* buff_ = nullptr;    // fixed buffer
-  uint buff_size_{0};         // fixed buffer
+  uint capcity_{0};         // fixed buffer
 
   std::vector<byte_t> vec_;   // dynamic buffer
 };
@@ -287,30 +309,33 @@ class StreamBytes : public StreamBase {
 // just contains objects to not controll it's deleting
 class StreamObj {
  public:
-  StreamObj(StreamFileOut&& stream) : stream_file_out_{std::move(stream)}, stream_{&stream_file_out_}, which_{0} {}
-  StreamObj(StreamFileIn&& stream) : stream_file_in_{std::move(stream)}, stream_{&stream_file_in_}, which_{1} {}
-  StreamObj(StreamBytes&& stream) : stream_bytes_{std::move(stream)}, stream_{&stream_bytes_}, which_{2} {}
+  StreamObj(StreamFileOut&& stream) : stream_file_out_{std::move(stream)}, stream_{&stream_file_out_}, mode_{0} {}
+  StreamObj(StreamFileIn&& stream) : stream_file_in_{std::move(stream)}, stream_{&stream_file_in_}, mode_{1} {}
+  StreamObj(StreamBytes&& stream) : stream_bytes_{std::move(stream)}, stream_{&stream_bytes_}, mode_{2} {}
 
   StreamObj(const StreamObj& obj) = delete;
 
   StreamObj(StreamObj&& obj) 
-    : which_{obj.which_}, 
+    : mode_{obj.mode_}, 
       stream_file_out_(std::move(obj.stream_file_out_)), 
       stream_file_in_(std::move(obj.stream_file_in_)),
       stream_bytes_(std::move(obj.stream_bytes_)) {
-    if (which_ == 0) stream_ = &stream_file_out_;
-    else if (which_ == 1) stream_ = &stream_file_in_;
-    else if (which_ == 2) stream_ = &stream_bytes_;
+    if (mode_ == 0) stream_ = &stream_file_out_;
+    else if (mode_ == 1) stream_ = &stream_file_in_;
+    else if (mode_ == 2) stream_ = &stream_bytes_;
     else {assert(false);}
   }
 
   StreamBase* stream() & {return stream_; }
+  int mode() const noexcept { return mode_; }
+  bool mode_file() const noexcept { return mode_ == 0 || mode_ == 1; }
+  bool mode_bytes() const noexcept { return mode_ == 2; }
 
  // private:
   StreamFileOut stream_file_out_;
   StreamFileIn stream_file_in_;
   StreamBytes stream_bytes_;
-  const int which_ = -1;
+  const int mode_ = -1; // 0 - file_out, 1 - file_in, 2 - bytes
   StreamBase* stream_;
 };
 
@@ -356,6 +381,8 @@ class Head final {
 
 class Block final {
  public:
+  using shape_t = std::array<xint_t, kMaxNDimXMat>;
+
   Block() = default;
 
   uint dump(StreamBase& stream) {
@@ -385,10 +412,17 @@ class Block final {
     return 1;
   }
 
+  template<typename T>
+  bool check_element() const {
+    bool out = std::strcmp(TypeInfo<T>::name, typename_.cbegin()) == 0
+            && TypeInfo<T>::size == typesize_;
+    return out;
+  }
+
  public:
   std::array<char, kMaxBlockNameLen> name_ = {};
   std::array<char, kMaxTypeNameLen> typename_ = {};
-  std::array<xint_t, kMaxNDimXMat> shape_ = {0};
+  shape_t shape_ = {0};
   xint_t numel_ = 0;
   std::uint8_t typesize_ = 0;
   std::uint8_t ndim_ = 0;
@@ -398,15 +432,45 @@ class Block final {
 };
 
 
-class Output final {
+class IOBase {
  public:
-  Output(StreamObj&& stream_obj)
-    : stream_obj_{std::move(stream_obj)}, stream_{stream_obj_.stream_}
-  {
+  IOBase(StreamObj&& stream_obj) : stream_obj_{std::move(stream_obj)}, stream_{stream_obj_.stream_} {}
+
+  // getters
+  // -------
+  bool is_open() const noexcept {return stream_->is_open(); }
+  bool mode_file() const noexcept {return stream_obj_.mode_file(); }
+  bool mode_bytes() const noexcept {return stream_obj_.mode_bytes(); }
+
+  const Head& header() const noexcept {return header_;}
+  StreamBytes& stream_bytes() noexcept {return stream_obj_.stream_bytes_; }
+  const StreamBytes& stream_bytes() const noexcept {return stream_obj_.stream_bytes_; }
+  byte_t* buff() noexcept { return stream_obj_.stream_bytes_.buff(); }
+  const byte_t* buff() const noexcept { return stream_obj_.stream_bytes_.buff(); }
+  uint size() const noexcept { return stream_->size(); }
+  uint capacity() const noexcept { return stream_obj_.stream_bytes_.capacity(); }
+
+ public: /*protected*/
+  Head header_{};
+  StreamObj stream_obj_;
+  StreamBase* stream_ = nullptr;
+};
+
+
+class Output : public IOBase {
+ public:
+  virtual ~Output() { close(); }
+
+  Output(StreamObj&& stream_obj) : IOBase{std::move(stream_obj)} {
+    assert(stream_->tell() == 0);
     header_.dump(*stream_);
   }
 
-  ~Output() { close(); }
+  void clear() noexcept {
+    assert(stream_obj_.mode_bytes()); // just for bytes now
+    stream_obj_.stream_bytes_.clear();
+    header_.dump(*stream_);
+  }
 
   Block add(const char* name, Block block) {
     assert(block.ptr_);
@@ -415,7 +479,7 @@ class Output final {
     stream_->write(block.ptr_, block.typesize_*block.numel_);
     return block;
   }
- 
+  
   void close() {
     if (!stream_->is_open()) { return; }
     header_.total_size = stream_->size();
@@ -423,32 +487,41 @@ class Output final {
     stream_->write(static_cast<xint_t>(stream_->size()));
     stream_->close();
   }
-
- public:
-  Head header_{};
-  StreamObj stream_obj_;
-  StreamBase* stream_ = nullptr;
 };
 
 
-class Input final {
+class Input : public IOBase {
  public:
-  Input(StreamObj&& stream_obj)
-    : stream_obj_{std::move(stream_obj)}, stream_{stream_obj_.stream_}
-  {
-    if (stream_->mode_ != StreamMode::in) {
-      throw std::runtime_error("stream_->mode_ != StreamMode::in");
-    }
 
-    scan();
+  Input(StreamObj&& stream_obj) : IOBase{std::move(stream_obj)} {
+    if (stream_->mode_ != StreamMode::in) {
+      throw std::runtime_error("wrong stream mode. stream_->mode_ != StreamMode::in");
+    }
+    if(!(mode_bytes() && size() == 0)) {  // uninitialized bytes buffer. 
+      scan(); 
+    }
   }
 
-  // Block block(const char* name) {
-  // }
+  void clear() noexcept {
+    assert(stream_obj_.mode_bytes()); // just for bytes now
+    stream_obj_.stream_bytes_.clear();
+    header_ = Head{};
+    content_.resize(0);
+  }
 
- private:
-  void scan() {
+  void scan() { scan_header(); scan_data(); }
+
+  void scan_header() {
+    assert(content_.size() == 0);
     header_.load(*stream_);
+  }
+
+  void scan_data() {
+    assert(header_.total_size != 0);
+    assert(stream_->tell() == kHeadSize);
+    if (header_.total_size == 0 || stream_->tell() != kHeadSize) {
+      throw std::runtime_error("xmat::Input::scan_data. `scan_header` was skipped"); 
+    }
     const auto neof = header_.total_size;
     while(stream_->tell() < neof) {
       Block block;
@@ -460,10 +533,7 @@ class Input final {
   }
 
  public:
-  Head header_{};
-  StreamObj stream_obj_;
-  StreamBase* stream_ = nullptr;
-
   std::vector<Block> content_{};
 };
+
 } // namespace xmat

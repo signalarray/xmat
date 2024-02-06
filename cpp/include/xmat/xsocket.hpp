@@ -7,9 +7,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
-// #define _XOPEN_SOURCE_EXTENDED 1     // https://www.ibm.com/docs/en/zos/2.4.0?topic=functions-recv-receive-data-socket#d386468e303
+
+#define _XOPEN_SOURCE_EXTENDED 1     // https://www.ibm.com/docs/en/zos/2.4.0?topic=functions-recv-receive-data-socket#d386468e303
 #include <sys/socket.h>
+
 #include <sys/fcntl.h>
+#include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -25,10 +28,15 @@
 #include <string>
 #include <sstream>
 #include <array>
+#include <vector>
 #include <algorithm>
 #include <exception>
 #include <chrono>
 #include <thread>
+
+
+// project
+#include "xutil.hpp"
 
 
 namespace xmat {
@@ -58,14 +66,6 @@ std::array<char, kMaxPortLen> portstr(int a) {
   return str;
 }
 
-template<uint N>
-uint assign(std::array<char, N>& dest, const char* src) {
-  auto n = std::strlen(src) + 1;
-  if (n > N) { throw std::overflow_error("cxx::assing()"); }
-  std::copy_n(src, n, dest.begin());
-  return n;
-}
-
 void *get_in_addr(struct sockaddr *sa)
 {
 	if (sa->sa_family == AF_INET) {
@@ -77,7 +77,7 @@ void *get_in_addr(struct sockaddr *sa)
 } // namespace `impl`
 
 
-class Socket final {
+class Socket {
  public:
 
   enum class Mode {
@@ -87,7 +87,30 @@ class Socket final {
     undef
   };
 
+  virtual ~Socket() { close(false); }
   Socket() = default;
+  Socket(const Socket&) = delete;
+  Socket& operator=(const Socket&) = delete;
+  Socket(Socket&& other) noexcept { swap(other); }
+
+  Socket& operator=(Socket&& other) noexcept {
+    Socket tmp(std::move(other));
+    swap(tmp);
+    return *this;
+  }
+
+  void swap(Socket& other) noexcept {
+    std::swap(other.ip_, ip_);
+    std::swap(other.port_, port_);
+    std::swap(other.socket_id_, socket_id_);
+    std::swap(other.is_open_, is_open_);
+    std::swap(other.ready_, ready_);
+    std::swap(other.mode_, mode_);
+    std::swap(other.blocked_, blocked_);
+    std::swap(other.addrinfo_, addrinfo_);
+
+    other.connection_addr_ = connection_addr_;
+  }
 
   // for server: ip := 0.0.0.0
   // if blocked == true - blocking 
@@ -95,8 +118,8 @@ class Socket final {
   // See also: about EWOULDBLOCK
   // https://www.ibm.com/docs/en/zos/2.4.0?topic=functions-recv-receive-data-socket
   Socket(const char* ip_addres, const char* port, bool blocked=true) {
-    impl::assign(ip_, ip_addres);
-    impl::assign(port_, port);
+    assign(ip_, ip_addres);
+    assign(port_, port);
     blocked_ = blocked;
 
     mode_ = strcmp(ip_addres, IP_SERVER) == 0 ? Mode::server : Mode::client;
@@ -129,13 +152,7 @@ class Socket final {
     is_open_ = true;
   }
 
-  Socket(const Socket&) = delete;
-  Socket& operator=(const Socket&) = delete;
-  Socket(Socket&&) noexcept = default;
-  Socket& operator=(Socket&&) noexcept = default;
-  ~Socket() { close(); } // close can throw Exception
-
-  void close() {
+  void close(bool flag_exception=true) {
     if(!is_open_) { return; }
 
     if (addrinfo_) {
@@ -143,11 +160,14 @@ class Socket final {
       addrinfo_ = nullptr;
     }
     const int out = ::close(socket_id_);
-    if (out) { throw SocketError{"error in: SocketTCP::close(), can't close the socket\n"}; }
+    if (flag_exception && out == -1) {
+      std::ostringstream oss{};
+      oss << "SocketTCP::close(): errno(" << errno << ")::" << ::strerror(errno) << '\n';
+      throw SocketError(oss.str());
+    }
     is_open_ = ready_ = false;
   }
 
-  bool is_open() { return is_open_; }
 
   // `client` methods
   // ----------------
@@ -178,7 +198,7 @@ class Socket final {
     ready_ = true;
   }
 
-  void connect_default_() {
+  void connect_default_() {   // not used
     assert(is_open_);
     if(mode_ != Mode::client) { throw SocketError("Socket::connet(). Socket isn't client"); }
     const int out = ::connect(socket_id_, addrinfo_->ai_addr, addrinfo_->ai_addrlen);
@@ -264,7 +284,7 @@ class Socket final {
                 impl::get_in_addr((sockaddr*)&connection_addr_),
                 connection.ip_.begin(),
                 connection.ip_.size());              
-      impl::assign(connection.port_, port_.begin());
+      assign(connection.port_, port_.begin());
     }
     return flag;
   }
@@ -294,7 +314,7 @@ class Socket final {
         total += n;
         bytesleft -= n;
     }
-    if(n < 0) { 
+    if(n < 0) {
       std::ostringstream oss;
       oss << "Socket.send() failed: out = send(...) < 0. errno: " << ::strerror(errno) << "\n";
       throw SocketError(oss.str());
@@ -317,11 +337,12 @@ class Socket final {
   // Return
   // ------
   // int > 0: if success
-  // -1 : if data isn't available (only for non-blocking mode)
+  //  0 : if data isn't available (only for non-blocking mode)
+  // -1 : connection closed
   // 
   // Exceptions
   // ----------
-  // SocketError: 
+  // SocketError:
   //  - error in recv
   //  - connection closed
   //  - time exceed
@@ -344,30 +365,108 @@ class Socket final {
       if (n == 0 || (n == -1 && errno != EWOULDBLOCK)) {
         break;
       }
-      n = int(!(n==-1)) * n; // n = n == -1 ? 0 : n;
-      total += n;
-      bytesleft -= n;
+      const int k = int(!(n==-1)) * n; // n = n == -1 ? 0 : n;
+      total += k;
+      bytesleft -= k;
       if (total == 0) { // just if didn't accept a single piece of data
         std::this_thread::sleep_for(dt);
       }
     } while (total < len      // length condition
-             && (blocked_ ||  // if socket is blocking - timeout doesn't matter
-                 !(total == 0 && std::chrono::system_clock::now() > tend)));  // if buffer is steel empty
+             && (blocked_     // if socket is blocking - timeout doesn't matter
+                 || !(total == 0 && std::chrono::system_clock::now() > tend)));  // if buffer is steel empty
 
     if (n == -1 && errno == EWOULDBLOCK) {
-      return -1; // just the data isn't available
-
+      return 0; // just the data isn't available
     } else {
       if(n < 0) {
         std::ostringstream oss;
-        oss << "Socket.send() failed: out = send(...) < 0. errno: " << strerror(errno) << "\n";
+        oss << "Socket.recv() failed: resv(:) < 0. errno: " << strerror(errno) << "\n";
         throw SocketError(oss.str()); 
       }
-      if(n == 0) { throw SocketError("Socket.send() failed: out = send(...) == 0. Means connection is closed"); }
+      if(n == 0) { throw SocketError("Socket.resv() failed: resv(:) == 0. Connection is closed"); }
       // timeout exceed
       if(total == 0) { throw SocketError("Socket.send() failed. timeout exceed."); }
     }
     return count;
+  }
+
+  // allowed just for non-blockking socket
+  // wait for `timeout_sec` until data is available.
+  // next read data while data is available.
+  // 
+  // Return
+  // ------
+  // number of bytes received
+  // if didn't receive any data during `timeout` - stop waiting. return 0
+  // if all data revaived and connection was closed - return num of bytes without error about closing
+  //
+  // Exceptions:
+  // if `errno` == 0
+  // if number of received bytes == 0, and connection closed:
+  // 
+  int recv_all(char* buff, const int buff_len, double timeout_sec=1.0) {
+    if (blocked_) { throw SocketError("Socket.recv_all: socket must be non-blocking"); }
+    if(!(mode_ == Mode::client || mode_ == Mode::connection)) {
+      throw SocketError("resv(). mode != Mode::client && mode != Mode::connection");
+    }
+    assert(ready_);
+
+    std::chrono::duration<double> tt{timeout_sec};
+    std::chrono::duration<double> dt{0.05};
+    auto tend = std::chrono::system_clock::now() + tt;
+
+    int total = 0, bytesleft = buff_len, n;
+    while (bytesleft && !(total == 0 && std::chrono::system_clock::now() > tend)) {
+      n = ::recv(socket_id_, buff+total, bytesleft, 0);
+      if (n == 0 // connection is closed
+          || (n == -1 // if any error, except EWOULDBLOCK, but if no sample data received
+              && !(total == 0 && errno == EWOULDBLOCK))) {
+        break;
+      }
+      const int k = int(!(n==-1)) * n; // n = n == -1 ? 0 : n;
+      total += k;
+      bytesleft -= k;
+      if (total == 0) { std::this_thread::sleep_for(dt); }
+    }
+
+    if(n < 0 && ! n == EWOULDBLOCK) {  // any error 
+      std::ostringstream oss;
+      oss << "Socket.resv_all() failed: out = send(:) < 0. errno(" << errno << ")::"
+          << strerror(errno) << "\n";
+      throw SocketError(oss.str());
+    }
+    if(total == 0 && n == 0) {
+      throw SocketError("Socket.resv_all() failed: resv(:) == 0. Connection is closed");
+    }
+
+    return total;
+  }
+
+  // getters
+  // -------
+  const char* port() const { return port_.data(); }
+  const char* ip() const { return ip_.data(); }
+
+  bool is_open() const { return is_open_; }
+  bool is_ready() const { return ready_; }
+  bool is_blocking() const { return blocked_; }
+
+  bool is_server() const { return mode_ == Mode::server; }
+  bool is_connection() const { return mode_ == Mode::connection; }
+  bool is_client() const { return mode_ == Mode::client; }
+
+  int num_bytes_available() {
+    if (!ready_) { throw SocketError("Socket.num_bytes_available(). socket isn`t ready"); }
+
+    int N = 0;
+    const int out = ::ioctl(socket_id_, FIONREAD, &N);
+    // ioctlsocket(socket,FIONREAD,&bytes_available)  Windows
+    if (out < 0) {
+        std::ostringstream oss;
+        oss << "Socket.num_bytes_available() failed: \nerrno: " << strerror(errno) << "\n";
+        throw SocketError(oss.str());
+    }
+    return N;
   }
 
  public:

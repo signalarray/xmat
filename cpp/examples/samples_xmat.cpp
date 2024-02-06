@@ -12,7 +12,7 @@
 #include <type_traits>
 
 #include "../include/xmat/xarr.hpp"
-#include "../include/xmat/xmat.hpp"
+#include "../include/xmat/xformat_spec.hpp"
 #include "common.hpp"
 
 
@@ -20,49 +20,6 @@ std::ostream* kOutStream = &std::cout;
 std::string folder_data = R"(../../../../data/)"; // error: path is different for different "build" folders. need to fix
 
 namespace {
-
-template<typename T>
-xmat::Block xblock(const T& X) {
-  xmat::Block block;
-  xmat::TypeInfo<T> info;
-  xmat::assign(block.typename_, info.name);
-  block.shape_ = {0};
-  block.numel_ = 1;
-  block.typesize_ = info.size;
-  block.ndim_ = 0;
-  block.ptr_ = reinterpret_cast<const char*>(&X);
-  return block;
-}
-
-
-template<typename T, typename A>
-xmat::Block xblock(const std::vector<T, A>& x) {
-  xmat::Block block;
-  xmat::TypeInfo<T> info;
-  xmat::assign(block.typename_, info.name);
-  block.shape_ = {x.size()};
-  block.numel_ = 1;
-  block.typesize_ = info.size;
-  block.ndim_ = 1;
-  block.ptr_ = reinterpret_cast<const char*>(x.data());
-  return block;
-}
-
-
-template<typename T>
-xmat::Block xblock(const xmat::Array<T>& x) {
-  xmat::Block block;
-  xmat::TypeInfo<T> info;
-  xmat::assign(block.typename_, info.name);
-  assert(x.map.ndim <= block.shape_.size());
-  std::copy_n(x.map.shape.begin(), x.map.ndim, block.shape_.begin());
-  block.numel_ = x.map.numel;
-  block.typesize_ = info.size;
-  block.ndim_ = x.map.ndim;
-  block.ptr_ = reinterpret_cast<const char*>(x.data);
-  return block;
-}
-
 
 void print_x(const xmat::Block& b) {
   printv(b.name_);
@@ -257,16 +214,16 @@ int sample_5() {
   print(1, "serialize", 0, '-');
   xmat::Output xout{xmat::StreamBytes{}};
   printvl(xout.stream_obj_.stream_bytes_);
-  xout.add("a0", xblock(a0));
-  xout.add("a1", xblock(a1));
-  xout.add("x0", xblock(x0));
-  xout.add("x1", xblock(x1));
-  xout.add("x2", xblock(x2));
+  xout.add("a0", xmat::xblock(a0));
+  xout.add("a1", xmat::xblock(a1));
+  xout.add("x0", xmat::xblock(x0));
+  xout.add("x1", xmat::xblock(x1));
+  xout.add("x2", xmat::xblock(x2));
   xout.close();
   printv(xout.header_.total_size);
   printvl(xout.stream_obj_.stream_bytes_);
 
-  print(1, "deseirialize", 0, '-');
+  print(1, "deserialize", 0, '-');
   xmat::Input xin{xmat::StreamBytes{xmat::StreamMode::in, 
                                     xout.stream_obj_.stream_bytes_.buff(),
                                     xout.stream_obj_.stream_bytes_.size()}};

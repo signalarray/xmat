@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
 #include <array>
 #include <initializer_list>
 #include <algorithm>
@@ -20,6 +21,25 @@ enum class Order: char {
   F = 'F'     // Fortran style order:    by columns
 };
 
+template<uint N>
+bool check_shape_0d(const std::array<uint, N>& s, uint ndim) {
+  bool out = true;
+  for(uint n : s) { out = out && n == 0; }
+  return out;
+}
+
+template<uint N>
+bool check_shape_1d(uint len, const std::array<uint, N>& s, uint ndim) {
+  uint flag = len;
+  for(uint n = 0; n < ndim; ++n) {
+    const uint a = s[n];
+    flag += len * uint(a == 1 || a == len);
+    flag -= len * uint(a==len);
+  }
+  bool out = flag == 0;
+  for(uint n = ndim; n < N; ++n) { out = out && s[n] == 0; }
+  return out;
+}
 
 using IndexBase = std::array<uint, kMaxNDimIndex>;
 
@@ -133,26 +153,55 @@ class Array {
   Array() = default;
   Array(const Index& shape, T* data=nullptr) : map(shape) { init(data); }
 
-  T& operator()(const Index& idx) {return data[map.at(idx)];}
-  T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) {return data[map.at(i0, i1, i2, i3)];}
+  Array(const Array& arr) = delete;
+  Array& operator=(const Array& arr) = delete;
 
-  const T& operator()(const Index& idx) const {return data[map.at(idx)];}
-  const T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) const {return data[map.at(i0, i1, i2, i3)];}
+  Array(Array&& other) { swap(other); }
 
-  void fill(const T& v) { std::fill(data, data + map.numel, v); }
+  Array& operator=(Array&& other) {
+    Array tmp{std::move(other)};
+    swap(tmp);
+    return *this;
+  }
+
+  void swap(Array& other) noexcept {
+    std::swap(other.map, map);
+    other.ptr_.swap(ptr_);
+    std::swap(other.data_);
+  }
+
+  T& operator()(const Index& idx) {return data_[map.at(idx)]; }
+  T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) {return data_[map.at(i0, i1, i2, i3)];}
+
+  const T& operator()(const Index& idx) const {return data_[map.at(idx)];}
+  const T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) const {return data_[map.at(i0, i1, i2, i3)];}
+
+  void fill(const T& v) { std::fill(data_, data_ + map.numel, v); }
+
+ public:
+  // T* data() { return data_; }
+  // const T* data() const { return data_; }
+
+  bool is_c_order() const noexcept { return order() == Order::C; }
+  bool is_f_order() const noexcept { return order() == Order::F; }
+  Order order() const noexcept { return map.order; }
+  uint ndim() const noexcept { return map.ndim; }
+  uint numel() const noexcept { return map.numel; }
+  Index shape() const noexcept { return map.shape; }
+  Index stride() const noexcept { return map.stride; }
 
   // properties
   Map map;
-  T* /*const*/ data;
+  T* data_ = nullptr;
 
  private:
-  void init(T* data_) {
-    if (data_) {
-      data = data_;
+  void init(T* ptr) {
+    if (ptr) {
+      ptr = ptr;
     }
     else {
       ptr_ = std::make_unique<T[]>(map.numel);
-      data = ptr_.get();
+      data_ = ptr_.get();
     }
   }
 
