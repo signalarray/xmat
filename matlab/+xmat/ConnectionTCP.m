@@ -1,4 +1,5 @@
 classdef ConnectionTCP < handle
+  % works in only with blocking mode
     
   properties (Constant)
 
@@ -115,24 +116,45 @@ classdef ConnectionTCP < handle
       write(obj.socket, xmatout.ostream.buff, 'uint8');
     end
 
+    function resend(obj, xmatin)
+      % Parameters
+      % ----------
+      % xin: xmat.Load.bytes
+      %   xmatout.ostream: xmat.StreamBytes
+      
+      if ~(isa(xmatin, 'xmat.Load') ... 
+          && isa(xmatin.istream, 'xmat.StreamBytes') ...
+          && isa(xmatin.istream.buff, 'uint8'))
+        error('wrong xmatin');
+      end
+      write(obj.socket, xmatin.istream.buff, 'uint8');
+    end
+
 
     % private methods
     % ---------------
     function count = read_buffer(obj)
       count = 0;
       while obj.socket.NumBytesAvailable
+        % hbuff = uint8(read(obj.socket, xmat.Header.k_SIZEB, 'char'))';
+        % h = xmat.Header.read(xmat.StreamBytes('r', hbuff));
+        % 
+        % dbuff = uint8(read(obj.socket, h.total_size-xmat.Header.k_SIZEB, 'char'))';
+        % xmatin = xmat.Load.bytes(dbuff, [], h);
+        % obj.content{end+1} = xmatin;
+        % count = count + 1;
+        
+        xin = xmat.Load.bytes([]);
         hbuff = uint8(read(obj.socket, xmat.Header.k_SIZEB, 'char'))';
-        h = xmat.Header.read(xmat.StreamBytes('r', hbuff));
-
-        dbuff = uint8(read(obj.socket, h.total_size-xmat.Header.k_SIZEB, 'char'))';
-        xmatin = xmat.Load.bytes(dbuff, [], h);
-        obj.content{end+1} = xmatin;
+        xin.istream.buff = [xin.istream.buff; hbuff];
+        xin.scan_header();
+        
+        dbuff = uint8(read(obj.socket, xin.h.total_size-xmat.Header.k_SIZEB, 'char'))';
+        xin.istream.buff = [xin.istream.buff; dbuff];
+        xin.scan_data();
+        obj.content{end+1} = xin;
         count = count + 1;
       end
     end
-  end
-
-
-  methods (Access=private)
   end
 end

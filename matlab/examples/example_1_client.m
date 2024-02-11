@@ -1,4 +1,5 @@
 function example_1_client()
+% basic connection-client with standart features of matlab
 % supposed to be used with echo-server
 
 clc

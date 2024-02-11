@@ -1,3 +1,8 @@
+/* 
+simple client for echo server for char messages 128bytes length
+use with: example_xsocket_server.cpp
+*/
+
 #include <iostream>
 #include <exception>
 

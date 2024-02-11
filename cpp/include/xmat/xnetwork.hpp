@@ -80,13 +80,22 @@ class Communication {
     if(!xout.mode_bytes()) { throw ConnectionError("Output.mode must be `bytes`"); }
     const StreamBytes& sbytes = xout.stream_bytes();
     
-    connection_->send(sbytes.buff(), sbytes.capacity());
+    connection_->send(sbytes.buff(), sbytes.size());
+  }
+
+  void resend(const Input& xout) {
+    if(!connection_) { throw ConnectionError("Communication insn`t connected"); }
+    if(!xout.mode_bytes()) { throw ConnectionError("Output.mode must be `bytes`"); }
+    const StreamBytes& sbytes = xout.stream_bytes();
+    
+    connection_->send(sbytes.buff(), sbytes.size());
   }
 
   // receive packet
   bool recv(Input& xin, double timeout_sec=1.0, Policy policy=Policy::dyn) {
     if(!connection_) { throw ConnectionError("Communication insn`t connected"); }
     // if(xin.is_open()) { throw ConnectionError("Output{bytes} must be closed before sending"); }
+    if(!xin.is_empty()) { throw ConnectionError("Input stream isn't `empty`"); }
     if(!xin.mode_bytes()) { throw ConnectionError("Output.mode must be `bytes`"); }
     
     StreamBytes& sbytes = xin.stream_bytes();
@@ -104,8 +113,11 @@ class Communication {
       else { 
         throw ConnectionError("just in case"); 
       }
-    }    
-    connection_->resv(sbytes.buff(), kHeadSize, timeout_sec);
+    }
+    int out = connection_->resv(sbytes.buff(), kHeadSize, timeout_sec);
+    if(out == 0) {
+       return false; // return if header wasn't received
+    }
 
     try { 
       xin.scan_header(); 
@@ -127,9 +139,12 @@ class Communication {
         throw ConnectionError("just in case"); 
       }
     }
-    connection_->resv(sbytes.buff() + sbytes.tell(), 
-                      h.total_size - sbytes.tell(), 
-                      timeout_sec);
+    out = connection_->resv(sbytes.buff() + sbytes.tell(), 
+                            h.total_size - sbytes.tell(), 
+                            timeout_sec);
+    if(out==0) {
+      throw ConnectionError("just header was resaved. data part wasn't");
+    }
 
     // scan data
     try {

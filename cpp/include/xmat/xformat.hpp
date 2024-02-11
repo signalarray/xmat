@@ -8,6 +8,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <map>
 #include <algorithm>
 #include <complex>
 #include <iterator>
@@ -198,7 +199,7 @@ class StreamBytes : public StreamBase {
               byte_t* buff, 
               uint buff_size, 
               Endian endian = Endian::native) 
-    : is_open_{true}, buff_{buff}, capcity_{buff_size},
+    : is_open_{true}, buff_{buff}, capacity_{buff_size},
       size_(mode == StreamMode::out ? 0 : buff_size) {
     mode_ = mode; 
     endian_ = endian;
@@ -232,7 +233,7 @@ class StreamBytes : public StreamBase {
   virtual void write__(const char* ptr, std::streamsize n) override {
     assert(mode_ == StreamMode::out);
     if (buff_) {
-      assert(cursor_ + n <= capcity_);
+      assert(cursor_ + n <= capacity_);
       if (cursor_ + n < size_) {
         return;
       }
@@ -256,7 +257,8 @@ class StreamBytes : public StreamBase {
   }
 
  public: // specific
-  void clear() noexcept { cursor_ = size_ = 0; }
+  void clear() noexcept { cursor_ = 0; size_ = mode_ == StreamMode::out ? 0 : size_; } // bad line
+  bool is_empty() const noexcept { return cursor_ == 0; }  // bad line
 
   // change buff size
   // just for input mode and non-fixed buff
@@ -284,7 +286,7 @@ class StreamBytes : public StreamBase {
   }
 
   uint capacity() const noexcept {
-    if(isfixed()) return capcity_;
+    if(isfixed()) return capacity_;
     else return vec_.size();
   }
 
@@ -300,7 +302,7 @@ class StreamBytes : public StreamBase {
   uint size_{0};              // used size
 
   byte_t* buff_ = nullptr;    // fixed buffer
-  uint capcity_{0};         // fixed buffer
+  uint capacity_{0};         // fixed buffer
 
   std::vector<byte_t> vec_;   // dynamic buffer
 };
@@ -457,6 +459,21 @@ class IOBase {
 };
 
 
+template<typename T, typename Enable = void>
+struct XSerial {
+  // static Block dump(const T& value) { 
+  //   // static_assert(false, "unsupported type");
+  //   assert(false);
+  //   return Block{}; 
+  // }
+  // static T load(const Block& block, StreamBase& stream) { 
+  //   // static_assert(false, "unsupported type");
+  //   assert(false);
+  //   return T{};
+  // }
+};
+
+
 class Output : public IOBase {
  public:
   virtual ~Output() { close(); }
@@ -472,14 +489,21 @@ class Output : public IOBase {
     header_.dump(*stream_);
   }
 
-  Block add(const char* name, Block block) {
+  template<typename T>
+  void add(const char* name, const T& x) {
+    Block block = XSerial<T>::dump(x);
+    add_impl(name, block);
+  }
+
+  Block add_impl(const char* name, Block block) {
+    assert(is_open());
     assert(block.ptr_);
     assign(block.name_, name);
     block.dump(*stream_);
     stream_->write(block.ptr_, block.typesize_*block.numel_);
     return block;
   }
-  
+
   void close() {
     if (!stream_->is_open()) { return; }
     header_.total_size = stream_->size();
@@ -492,6 +516,7 @@ class Output : public IOBase {
 
 class Input : public IOBase {
  public:
+  using block_iter_t = std::vector<Block>::const_iterator;
 
   Input(StreamObj&& stream_obj) : IOBase{std::move(stream_obj)} {
     if (stream_->mode_ != StreamMode::in) {
@@ -509,6 +534,72 @@ class Input : public IOBase {
     content_.resize(0);
   }
 
+  bool is_empty() const noexcept {
+    return stream_obj_.stream_bytes_.is_empty() 
+           && header_.total_size == 0
+           && content_.size() == 0;
+  }
+
+  // loading data
+  // ------------
+  template<typename T>
+  bool is(const char* name) const noexcept {
+    const Block* ptr = get_block_ptr(name);
+    if (ptr == nullptr) { return false; } 
+    else { return XSerial<T>::is_dyn(*ptr); }
+  }
+
+template<typename T>
+  bool is(const char* name, const T& y) const noexcept {
+    const Block* ptr = get_block_ptr(name);
+    if (ptr == nullptr) { return false; } 
+    else { return XSerial<T>::is_dyn(*ptr, y); }
+  }
+
+  template<typename T>
+  T at(const char* name) const {
+    const Block& block = get_block(name);
+    stream_->seek(block.pos_, std::ios_base::beg);
+    return XSerial<T>::load(block, *stream_);
+  }
+
+  // if only size is the same
+  template<typename T>
+  void at(const char* name, T& y) const {
+    const Block& block = get_block(name);
+    stream_->seek(block.pos_, std::ios_base::beg);
+    return XSerial<T>::load(block, *stream_, y);
+  }
+
+  // allow to resize()
+  template<typename T>
+  void at(const char* name, T& y, bool flag_fix_size) const {
+    const Block& block = get_block(name);
+    stream_->seek(block.pos_, std::ios_base::beg);
+    return XSerial<T>::load(block, *stream_, y);
+  }
+
+  // fields access
+  // -------------
+  bool has(const std::string& name) const noexcept { return has(name.c_str()); }
+  const Block& get_block(const std::string& name) const { return get_block(name.c_str()); }
+  
+  bool has(const char* name) const noexcept { return get_block_ptr(name) != nullptr; }
+
+  const Block& get_block(const char* name) const {
+    const Block* ptr = get_block_ptr(name);
+    if(ptr == nullptr) { throw std::out_of_range("xmat::Input::get_block() wrong name"); }
+    return *ptr;
+  }
+
+  const Block* get_block_ptr(const char* name) const noexcept {
+    auto same_name = [name](const Block& block) { return std::strcmp(block.name_.cbegin(), name) == 0; };
+    auto it = std::find_if(content_.cbegin(), content_.cend(), same_name);
+    return it != content_.cend() ? &(*it) : nullptr;
+  }
+
+  // scan format content
+  // -------------------
   void scan() { scan_header(); scan_data(); }
 
   void scan_header() {

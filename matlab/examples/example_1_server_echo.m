@@ -1,4 +1,7 @@
 function example_1_server_echo()
+% basic connection-server with standart features of matlab
+% works in echo mode
+
 clc
 clear all
 close all

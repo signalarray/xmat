@@ -30,13 +30,13 @@ bool check_shape_0d(const std::array<uint, N>& s, uint ndim) {
 
 template<uint N>
 bool check_shape_1d(uint len, const std::array<uint, N>& s, uint ndim) {
-  uint flag = len;
+  uint k = 0, m = 0;
   for(uint n = 0; n < ndim; ++n) {
     const uint a = s[n];
-    flag += len * uint(a == 1 || a == len);
-    flag -= len * uint(a==len);
+    if(a == len) { ++k; } 
+    else if(a == 1) { ++m; }
   }
-  bool out = flag == 0;
+  bool out = k == 1 && m == ndim - 1;
   for(uint n = ndim; n < N; ++n) { out = out && s[n] == 0; }
   return out;
 }
@@ -49,6 +49,13 @@ class Index : public IndexBase {
   using IndexBase::IndexBase;
 
   Index(const IndexBase& arr) { static_cast<IndexBase&>(*this) = arr; }
+
+  template<typename It>
+  Index(It begin, It end) {
+    fill(0);
+    uint n = 0;
+    for(It it=begin; it != end && n < size(); ++it, ++n) { at(n) = *it; }
+  }
 
   Index(std::initializer_list<uint> shape) {
     fill(0);
@@ -167,7 +174,7 @@ class Array {
   void swap(Array& other) noexcept {
     std::swap(other.map, map);
     other.ptr_.swap(ptr_);
-    std::swap(other.data_);
+    std::swap(other.data_, data_);
   }
 
   T& operator()(const Index& idx) {return data_[map.at(idx)]; }
@@ -179,16 +186,16 @@ class Array {
   void fill(const T& v) { std::fill(data_, data_ + map.numel, v); }
 
  public:
-  // T* data() { return data_; }
-  // const T* data() const { return data_; }
+  T* data() { return data_; }
+  const T* data() const { return data_; }
 
   bool is_c_order() const noexcept { return order() == Order::C; }
   bool is_f_order() const noexcept { return order() == Order::F; }
   Order order() const noexcept { return map.order; }
   uint ndim() const noexcept { return map.ndim; }
   uint numel() const noexcept { return map.numel; }
-  Index shape() const noexcept { return map.shape; }
-  Index stride() const noexcept { return map.stride; }
+  const Index& shape() const noexcept { return map.shape; }
+  const Index& stride() const noexcept { return map.stride; }
 
   // properties
   Map map;
