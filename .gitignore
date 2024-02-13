@@ -1,6 +1,7 @@
 # just to store temporary test files
 /data/*
 !/data/file.txt
+temp_*
 
 # char `/` mark just folders in the root of project
 /build*/

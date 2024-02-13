@@ -68,7 +68,7 @@ int sample_1() {
 
     // process stop condition
     if(xin.is<std::string>("command")) {
-      auto str = xin.at<std::string>("command");
+      auto str = xin.getitem<std::string>("command");
       if(str == "stop") {
         print("server was closed by [command]: 'stop'");
         break;

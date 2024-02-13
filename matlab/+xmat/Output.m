@@ -1,4 +1,4 @@
-classdef Save < handle
+classdef Output < handle
     
   properties
     ostream
@@ -8,37 +8,36 @@ classdef Save < handle
   
 
   methods (Static)
-    function xout = file(filename, byteorder)
+    function xout = from_file(filename, byteorder)
       if nargin < 2 || isempty(byteorder)
         byteorder = [];
       end
 
       stream = xmat.StreamFile(filename, 'w', byteorder);
-      xout = xmat.Save(stream);
+      xout = xmat.Output(stream);
     end
 
 
-    function xout = bytes(byteorder)
+    function xout = from_bytes(byteorder)
       if nargin < 1 || isempty(byteorder)
         byteorder = [];
       end
 
       stream = xmat.StreamBytes('w', [], byteorder);
-      xout = xmat.Save(stream);
+      xout = xmat.Output(stream);
     end
   end
 
 
   methods
-    function obj = Save(output_stream)
+    function obj = Output(output_stream)
       obj.ostream = output_stream;
       obj.h = xmat.Header();
 
       obj.h.write(obj.ostream);
     end
 
-
-    function save(obj, name, A)
+    function setitem(obj, name, A)
       % write A to ostream
       % Parameters:
       % -----------
@@ -77,8 +76,10 @@ classdef Save < handle
 
     function close(obj)
       % save header.total_size
+      total_size = obj.ostream.size();
+      obj.h.total_size = total_size;
       obj.ostream.seek(0, -1);
-      obj.ostream.write(uint64(obj.ostream.size()));
+      obj.ostream.write(uint64(total_size));
       
       obj.ostream.close();
       obj.isclosed = true;

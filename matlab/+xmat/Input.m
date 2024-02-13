@@ -1,5 +1,4 @@
-classdef Load < handle
-  
+classdef Input < handle
   
   properties
     istream
@@ -12,29 +11,29 @@ classdef Load < handle
   
   
   methods (Static)
-    function xin = file(filename, byteorder)
+    function xin = from_file(filename, byteorder)
       if nargin < 2 || isempty(byteorder)
         byteorder = [];
       end
 
       stream = xmat.StreamFile(filename, 'r', byteorder);
-      xin = xmat.Load(stream);
+      xin = xmat.Input(stream);
     end
 
 
-    function xin = bytes(buff, byteorder)
+    function xin = from_bytes(buff, byteorder)
       if nargin < 2 || isempty(byteorder)
         byteorder = [];
       end
 
       stream = xmat.StreamBytes('r', buff, byteorder);
-      xin = xmat.Load(stream);
+      xin = xmat.Input(stream);
     end
   end
 
 
   methods
-    function obj = Load(input_stream)
+    function obj = Input(input_stream)
       obj.istream = input_stream;
       if ~(isa(input_stream, 'xmat.StreamBytes') && isempty(input_stream.buff))
         obj.scan();
@@ -42,7 +41,11 @@ classdef Load < handle
     end
 
 
-    function A = load(obj, name)
+    function A = getitem(obj, name)
+      if ~(isstring(name) || ischar(name))
+        errror('wront input parameter type: %s, `string` expected', class(name));
+      end
+
       if ~isfield(obj.map, name)
         A = [];
       else
@@ -50,12 +53,22 @@ classdef Load < handle
         obj.istream.seek(bd_.pos_data, -1);
         class_ = xmat.Util.k_TYPES_MAP_XMAT.(bd_.typename){1};
         if bd_.typename(1) == 'c' % complex
+          if contains(class_, 'int')
+            A = [];
+            warning('complex<integer:%s> types aren`t supported', class);
+            return;
+          end
           A = obj.istream.read(bd_.typesize, bd_.numel, class_);
           A = complex(A(1:2:end), A(2:2:end));
         else
           A = obj.istream.read(bd_.typesize, bd_.numel, class_);        
         end
-        A = reshape(A, bd_.shape);
+
+        %%% supposes that all arrays are stored in xmat in C-elemen-order
+        if length(bd_.shape) == 1
+          bd_.shape = [1 bd_.shape];  % 1d-vector is a row<1, N>
+        end
+        A = permute(reshape(A, flip(bd_.shape)), length(bd_.shape):-1:1);
       end
     end
 

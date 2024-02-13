@@ -63,15 +63,15 @@ template<> struct TypeInfo<T> {                            \
   static constexpr const char* const name = Name;                       \
 };                                                         \
 
-XMAT_ADDTYPE(char,                 "_char");  // char
+XMAT_ADDTYPE(char,                 "qchar");  // char
 XMAT_ADDTYPE(std::int8_t,          "ri08");   // int signed
 XMAT_ADDTYPE(std::int16_t,         "ri16");
 XMAT_ADDTYPE(std::int32_t,         "ri32");
 XMAT_ADDTYPE(std::int64_t,         "ri64");
-XMAT_ADDTYPE(std::uint8_t,         "ui08");   // int unsigned
-XMAT_ADDTYPE(std::uint16_t,        "ui16");
-XMAT_ADDTYPE(std::uint32_t,        "ui32");
-XMAT_ADDTYPE(std::uint64_t,        "ui64");
+XMAT_ADDTYPE(std::uint8_t,         "ru08");   // int unsigned
+XMAT_ADDTYPE(std::uint16_t,        "ru16");
+XMAT_ADDTYPE(std::uint32_t,        "ru32");
+XMAT_ADDTYPE(std::uint64_t,        "ru64");
 XMAT_ADDTYPE(float,                "rf32");   // floating point
 XMAT_ADDTYPE(double,               "rf64");
 XMAT_ADDTYPE(std::complex<float>,  "cf32");   // complex
@@ -105,7 +105,7 @@ class StreamBase {
   virtual uint tell() = 0;
   virtual void seek(std::streamoff off, std::ios::seekdir way) = 0;
   virtual bool eof() const noexcept = 0;
-  virtual uint size() const noexcept = 0;
+  virtual uint size() noexcept = 0;
   virtual bool is_open() const noexcept = 0;
 
   virtual void write__(const char* ptr, std::streamsize n) {std::runtime_error("can't write");}
@@ -158,7 +158,15 @@ class StreamFileOut : public StreamBase {
   virtual uint tell() override {return os_.tellp();}
   virtual void seek(std::streamoff off, std::ios_base::seekdir way) override {os_.seekp(off, way);}
   virtual bool eof() const noexcept override {return os_.eof();}
-  virtual uint size() const noexcept override {return 0;}
+  
+  virtual uint size() noexcept override {
+    const std::streampos pos = os_.tellp();
+    os_.seekp(0, std::ios::end);
+    const std::streampos sz = os_.tellp();
+    os_.seekp(pos, std::ios::beg);
+    return static_cast<uint>(sz);
+  }
+  
   virtual bool is_open() const noexcept override {return os_.is_open();}
 
   virtual void write__(const char* ptr, std::streamsize n) override { os_.write(ptr, n); }
@@ -184,7 +192,15 @@ class StreamFileIn : public StreamBase {
   virtual uint tell() override {return is_.tellg();}
   virtual void seek(std::streamoff off, std::ios_base::seekdir way) override {is_.seekg(off, way);}
   virtual bool eof() const noexcept override {return is_.eof();}
-  virtual uint size() const noexcept override {return 0;}
+  
+  virtual uint size() noexcept override {
+    const std::streampos pos = is_.tellg();
+    is_.seekg(0, std::ios::end);
+    const std::streampos sz = is_.tellg();
+    is_.seekg(pos, std::ios::beg);
+    return static_cast<uint>(sz);
+  }
+  
   virtual bool is_open() const noexcept override {return is_.is_open();}
 
   virtual void read__(char* ptr, std::streamsize n) override { is_.read(ptr, n); }
@@ -227,7 +243,7 @@ class StreamBytes : public StreamBase {
   }
 
   virtual bool eof() const noexcept override {return cursor_ == vec_.size();}
-  virtual uint size() const noexcept override { return size_; }
+  virtual uint size() noexcept override { return size_; }
   virtual bool is_open() const noexcept override {return is_open_;}
 
   virtual void write__(const char* ptr, std::streamsize n) override {
@@ -461,16 +477,8 @@ class IOBase {
 
 template<typename T, typename Enable = void>
 struct XSerial {
-  // static Block dump(const T& value) { 
-  //   // static_assert(false, "unsupported type");
-  //   assert(false);
-  //   return Block{}; 
-  // }
-  // static T load(const Block& block, StreamBase& stream) { 
-  //   // static_assert(false, "unsupported type");
-  //   assert(false);
-  //   return T{};
-  // }
+  // static Block dump(const T& value);
+  // static T load(const Block& block, StreamBase& stream);
 };
 
 
@@ -490,7 +498,7 @@ class Output : public IOBase {
   }
 
   template<typename T>
-  void add(const char* name, const T& x) {
+  void setitem(const char* name, const T& x) {
     Block block = XSerial<T>::dump(x);
     add_impl(name, block);
   }
@@ -557,7 +565,7 @@ template<typename T>
   }
 
   template<typename T>
-  T at(const char* name) const {
+  T getitem(const char* name) const {
     const Block& block = get_block(name);
     stream_->seek(block.pos_, std::ios_base::beg);
     return XSerial<T>::load(block, *stream_);
@@ -565,7 +573,7 @@ template<typename T>
 
   // if only size is the same
   template<typename T>
-  void at(const char* name, T& y) const {
+  void getitem(const char* name, T& y) const {
     const Block& block = get_block(name);
     stream_->seek(block.pos_, std::ios_base::beg);
     return XSerial<T>::load(block, *stream_, y);
@@ -573,7 +581,7 @@ template<typename T>
 
   // allow to resize()
   template<typename T>
-  void at(const char* name, T& y, bool flag_fix_size) const {
+  void getitem(const char* name, T& y, bool flag_fix_size) const {
     const Block& block = get_block(name);
     stream_->seek(block.pos_, std::ios_base::beg);
     return XSerial<T>::load(block, *stream_, y);

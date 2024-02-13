@@ -29,18 +29,18 @@ struct XSerial<T, std::enable_if_t<TypeInfo<T>::registered>> {
     Block block;
     TypeInfo<T> info;
     assign(block.typename_, info.name);
-    block.shape_ = {0};
+    block.shape_ = {1};
     block.numel_ = 1;
     block.typesize_ = info.size;
-    block.ndim_ = 0;
+    block.ndim_ = 1;
     block.ptr_ = reinterpret_cast<const char*>(&x);
     return block;
   }
 
   static bool is_dyn(const Block& block) {
-    return block.check_element<T>() && 
-           block.ndim_ == 0 && 
-           check_shape_0d(block.shape_, block.ndim_);
+    return block.check_element<T>() &&
+           block.numel_ == 1 &&
+           check_shape_1d(1, block.shape_, block.ndim_);
   }
 
   static bool is_fix(const Block& block, const T&x) { (void)x; return is_dyn(block); }
@@ -49,10 +49,10 @@ struct XSerial<T, std::enable_if_t<TypeInfo<T>::registered>> {
     if(!block.check_element<T>()) { 
       throw DeserializationError("Scalar load(): wrong scalar type"); 
     }
-    if( !(block.numel_ == 1 && block.ndim_ == 0 )){ 
+    if( !(block.numel_ == 1)){ 
       throw DeserializationError("Scalar load(): wrong numel|ndim"); 
     }
-    if(!check_shape_0d(block.shape_, block.ndim_)) {
+    if(!check_shape_1d(1, block.shape_, block.ndim_)) {
       throw DeserializationError("Scalar load(): wrong shape ");
     }
     stream.seek(block.pos_, std::ios_base::beg);

@@ -67,30 +67,30 @@ sample_3();
     
     mode = 'f';  % {'b', 'f'}
     if mode == 'b'
-      xout = xmat.Save.bytes();
+      xout = xmat.Output.from_bytes();
     else
-      xout = xmat.Save.file(filename_out);
+      xout = xmat.Output.from_file(filename_out);
     end
 
-    xout.save('field_0', uint8(1:4));
-    xout.save('field_1', randi(8, [3, 5]));
-    xout.save('field_2', randi(8, [2, 3], 'uint8'));
-    xout.save('field_3', complex(1:8, 8:-1:1));
-    xout.save('field_4', 'asdads');
+    xout.setitem('field_0', uint8(1:4));
+    xout.setitem('field_1', randi(8, [3, 5]));
+    xout.setitem('field_2', randi(8, [2, 3], 'uint8'));
+    xout.setitem('field_3', complex(1:8, 8:-1:1));
+    xout.setitem('field_4', 'asdads');
     xout.close();
 
     if mode == 'b'
-      xin = xmat.Load.bytes(xout.ostream.buff);
+      xin = xmat.Input.from_bytes(xout.ostream.buff);
     else
-      xin = xmat.Load.file(filename_out);
+      xin = xmat.Input.from_file(filename_out);
     end
     disp(xin.map)
     
-    a0 = xin.load('field_0')
-    a1 = xin.load('field_1')
-    a2 = xin.load('field_2')
-    a3 = xin.load('field_3')
-    a4 = xin.load('field_4')
+    a0 = xin.getitem('field_0')
+    a1 = xin.getitem('field_1')
+    a2 = xin.getitem('field_2')
+    a3 = xin.getitem('field_3')
+    a4 = xin.getitem('field_4')
     
     if mode == 'b'
       % load Header and Blocks in separate way
@@ -100,9 +100,7 @@ sample_3();
       h = xmat.Header.read(xmat.StreamBytes('r', hbuff));
       xin2 = xmat.Load(xmat.StreamBytes('r', lbuff), h);
       disp(xin2.map)
-      a0 = xin2.load('field_0')
+      a0 = xin2.getitem('field_0')
     end
   end
 end
-
-

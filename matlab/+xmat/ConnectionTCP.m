@@ -99,18 +99,35 @@ classdef ConnectionTCP < handle
       obj.content(1) = [];
     end
 
+    function xin_bytes = resv(obj)
+      % Returns
+      % -------
+      % xmat.Input<StreamBytes>
 
-    function write(obj, xmatout)
+      obj.wait();
+      xin_bytes = obj.pop();
+    end
+
+    function send(obj, xmatout)
       % Parameters
       % ----------
-      % xmatout: xmat.Save.bytes
+      % xmatout: xmat.Output.bytes
       %   xmatout.ostream: xmat.StreamBytes
       
-      if ~(isa(xmatout, 'xmat.Save') ... 
-          && isa(xmatout.ostream, 'xmat.StreamBytes') ...
-          && isa(xmatout.ostream.buff, 'uint8') ...
-          && xmatout.isclosed)
-        error('wrong xmatout');
+      if ~isa(xmatout, 'xmat.Output') 
+        error('wrong xout class: %s', class(xmatout));
+      end
+      if xmatout.h.total_size == 0 
+        error('xmatout.h.total_size ~= 0 ::%d', xmatout.h.total_size);
+      end
+      if ~isa(xmatout.ostream, 'xmat.StreamBytes')
+        error('wrong xmatout.ostream class: %s', class(xmatout.ostream));
+      end
+      if ~isa(xmatout.ostream.buff, 'uint8')
+        error('wrong xmatout.ostream.buff class: %s', class(xmatout.ostream.buff));
+      end
+      if ~xmatout.isclosed
+        error('xout is`nt closed');
       end
       
       write(obj.socket, xmatout.ostream.buff, 'uint8');
@@ -121,11 +138,15 @@ classdef ConnectionTCP < handle
       % ----------
       % xin: xmat.Load.bytes
       %   xmatout.ostream: xmat.StreamBytes
-      
-      if ~(isa(xmatin, 'xmat.Load') ... 
-          && isa(xmatin.istream, 'xmat.StreamBytes') ...
-          && isa(xmatin.istream.buff, 'uint8'))
-        error('wrong xmatin');
+
+      if ~isa(xmatin, 'xmat.Input') 
+        error('xout class');
+      end
+      if xmatin.h.total_size == 0
+        error('xmatout.h.total_size ~= 0 ');
+      end
+      if ~isa(xmatin.istream, 'xmat.StreamBytes')
+        error('wrong xmatout.ostream class: %s', class(xmatin.istream));
       end
       write(obj.socket, xmatin.istream.buff, 'uint8');
     end
@@ -136,15 +157,7 @@ classdef ConnectionTCP < handle
     function count = read_buffer(obj)
       count = 0;
       while obj.socket.NumBytesAvailable
-        % hbuff = uint8(read(obj.socket, xmat.Header.k_SIZEB, 'char'))';
-        % h = xmat.Header.read(xmat.StreamBytes('r', hbuff));
-        % 
-        % dbuff = uint8(read(obj.socket, h.total_size-xmat.Header.k_SIZEB, 'char'))';
-        % xmatin = xmat.Load.bytes(dbuff, [], h);
-        % obj.content{end+1} = xmatin;
-        % count = count + 1;
-        
-        xin = xmat.Load.bytes([]);
+        xin = xmat.Input.from_bytes([]);
         hbuff = uint8(read(obj.socket, xmat.Header.k_SIZEB, 'char'))';
         xin.istream.buff = [xin.istream.buff; hbuff];
         xin.scan_header();

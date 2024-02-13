@@ -30,8 +30,8 @@ int sample_0() {
 
   print(1, "serialize", 0, '-');
   xmat::Output xout{xmat::StreamBytes{}};
-  xout.add("x0", x0);
-  xout.add("x1", x1);
+  xout.setitem("x0", x0);
+  xout.setitem("x1", x1);
   xout.close();
   printv(xout.header_.total_size);
   printvl(xout.stream_obj_.stream_bytes_);
@@ -76,10 +76,10 @@ int sample_1() {
   print(1, "step 1", 0, '=');
   print(1, "serialize", 0, '-');
   xmat::Output xout_0{xmat::StreamBytes{}};
-  xout_0.add("x0", int{8});
-  xout_0.add("x1", std::complex<double>{.1, .2});
-  xout_0.add("x2", std::vector<int>{4, 3, 2, 1, 0});
-  xout_0.add("x3", std::string{"string type var"});
+  xout_0.setitem("x0", int{8});
+  xout_0.setitem("x1", std::complex<double>{.1, .2});
+  xout_0.setitem("x2", std::vector<int>{4, 3, 2, 1, 0});
+  xout_0.setitem("x3", std::string{"string type var"});
   xout_0.close();
   printv(xout_0.capacity());
 
@@ -105,7 +105,7 @@ int sample_1() {
   // -------------
 
   xmat::Output xout_end{xmat::StreamBytes{}};
-  xout_end.add("command", std::string{"stop"});
+  xout_end.setitem("command", std::string{"stop"});
   xout_end.close();
   xcom.send(xout_end);
 

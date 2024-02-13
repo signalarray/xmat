@@ -57,6 +57,12 @@ classdef Util
         typename(1) = 'c';
       end
     end
+
+
+    function B = change_order(A)
+      B = permute(reshape(A(:), flip(size(A))), ...
+                  ndims(A):-1:1);
+    end
   end
 end
 

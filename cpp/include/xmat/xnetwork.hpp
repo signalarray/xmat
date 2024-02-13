@@ -74,19 +74,21 @@ class Communication {
   }
 
   // send packet
-  void send(const Output& xout) {
+  void send(Output& xout) {
     if(!connection_) { throw ConnectionError("Communication insn`t connected"); }
     if(xout.is_open()) { throw ConnectionError("Output{bytes} must be closed before sending"); }
+    if(xout.header().total_size == 0) { throw ConnectionError("Output{bytes}.header.total_size == 0. xout must be closed"); }
     if(!xout.mode_bytes()) { throw ConnectionError("Output.mode must be `bytes`"); }
-    const StreamBytes& sbytes = xout.stream_bytes();
+    StreamBytes& sbytes = xout.stream_bytes();
     
     connection_->send(sbytes.buff(), sbytes.size());
   }
 
-  void resend(const Input& xout) {
+  void resend(Input& xout) {
     if(!connection_) { throw ConnectionError("Communication insn`t connected"); }
+    if(xout.header().total_size == 0) { throw ConnectionError("xout.header.total_size == 0"); }
     if(!xout.mode_bytes()) { throw ConnectionError("Output.mode must be `bytes`"); }
-    const StreamBytes& sbytes = xout.stream_bytes();
+    StreamBytes& sbytes = xout.stream_bytes();
     
     connection_->send(sbytes.buff(), sbytes.size());
   }

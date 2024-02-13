@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <vector>
 #include <array>
+#include <complex>
 #include <type_traits>
 
 #include "../include/xmat/xarr.hpp"
@@ -167,10 +168,41 @@ int sample_3() {
 
 int sample_4() {
   print("SAMPLE_4", 1);
-  print("using Array", 1, '=');
+  print("cast Arrays", 1, '=');
+
+  auto a0 = xmat::cast<int>((double)1.0);
+  auto a1 = xmat::cast<int8_t>(1.0);
+  auto a2 = xmat::cast<double>('1');
+
+  auto a3 = xmat::cast<std::complex<int>>(2);
+  auto a4 = xmat::cast<std::complex<double>>(2);
+  auto a5 = xmat::cast<std::complex<int>>(2.0);
+
+  auto b0 = xmat::cast<std::complex<int>>(std::complex<int>{1, 2});
+  auto b1 = xmat::cast<std::complex<double>>(std::complex<int>{1, 2});
+  auto b2 = xmat::cast<std::complex<int>>(std::complex<double>{1.0, 2.0});
+
+  printv(a0); printv((int)a1); printv(a2);
+  printv(a3); printv(a4); printv(a5);
+  printv(b0); printv(b1); printv(b2);
 
 
+  print(1, "xmat::Array<T> cast", 0, '-');
+  xmat::Array<int> x0{{2, 3}};
+  x0.enumerate();
 
+  auto x1 = x0.cast<double>();
+  auto x2 = x1.cast<std::complex<unsigned>>();
+  auto x3 = x2.cast<std::complex<float>>();
+
+  print("x0<int>: ", 1);
+  xmat::print(*kOutStream, x0, 4);
+  print("x1<double>: ", 1);
+  xmat::print(*kOutStream, x1, 4);
+  print("x2<cx<double>>: ", 1);
+  xmat::print(*kOutStream, x2, 4);
+  print("x3<cx<float>>: ", 1);
+  xmat::print(*kOutStream, x3, 4);
   print(1, "finish", 1, '=');
   return 1;
 }
@@ -179,8 +211,9 @@ int sample_4() {
 
 int main() {
   print("START: " __FILE__, 0, '=');
-  sample_2();
-  sample_3();
+  // sample_2();
+  // sample_3();
+  sample_4();
   print("END: " __FILE__, 0, '=');
   return EXIT_SUCCESS;
 }

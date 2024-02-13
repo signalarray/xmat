@@ -274,16 +274,16 @@ int sample_6() {
   print(1, "serialize", 0, '-');
   xmat::Output xout{xmat::StreamBytes{}};
   printvl(xout.stream_obj_.stream_bytes_);
-  xout.add("a0", a0);
-  xout.add("a1", a1);
-  xout.add("a2", a2);
-  xout.add("a3", a3);
-  xout.add("a4", a4);
-  xout.add("a5", a5);
-  xout.add("a6", a6);
-  xout.add("a7", a7);
-  xout.add("b0", 1.25 + 4.5);
-  xout.add("b1", (4-5));
+  xout.setitem("a0", a0);
+  xout.setitem("a1", a1);
+  xout.setitem("a2", a2);
+  xout.setitem("a3", a3);
+  xout.setitem("a4", a4);
+  xout.setitem("a5", a5);
+  xout.setitem("a6", a6);
+  xout.setitem("a7", a7);
+  xout.setitem("b0", 1.25 + 4.5);
+  xout.setitem("b1", (4-5));
   xout.close();
   printv(xout.header_.total_size);
   printvl(xout.stream_obj_.stream_bytes_);
@@ -300,21 +300,21 @@ int sample_6() {
   assert(xin.is<int>("a0"));
   assert(xin.is<std::vector<int>>("a0"));
   assert((xin.is<std::array<int, 1>>("a0")));
-  auto A0 = xin.at<int>("a0");
+  auto A0 = xin.getitem<int>("a0");
   // -------------------------
   assert(xin.is<std::complex<double>>("a1"));
   assert(xin.is<std::vector<std::complex<double>>>("a1"));
   assert((xin.is<std::array<std::complex<double>, 1>>("a1")));  
-  auto A1 = xin.at<std::complex<double>>("a1");
+  auto A1 = xin.getitem<std::complex<double>>("a1");
   // ------------------------------------------
-  auto A2 = xin.at<char>("a2");
-  auto A3 = xin.at<std::vector<int>>("a3");
-  auto A4 = xin.at<std::vector<std::complex<double>>>("a4");
-  auto A5 = xin.at<std::array<float, 5>>("a5");
-  auto A6 = xin.at<std::string>("a6");
-  auto A7 = xin.at<xmat::Array<int>>("a7");
-  auto B0 = xin.at<double>("b0");
-  auto B1 = xin.at<int>("b1");
+  auto A2 = xin.getitem<char>("a2");
+  auto A3 = xin.getitem<std::vector<int>>("a3");
+  auto A4 = xin.getitem<std::vector<std::complex<double>>>("a4");
+  auto A5 = xin.getitem<std::array<float, 5>>("a5");
+  auto A6 = xin.getitem<std::string>("a6");
+  auto A7 = xin.getitem<xmat::Array<int>>("a7");
+  auto B0 = xin.getitem<double>("b0");
+  auto B1 = xin.getitem<int>("b1");
 
 // 
   printv(A0);
@@ -330,11 +330,11 @@ int sample_6() {
   printv(B1);
 
   print(1, "load one more time to current var", 0, '-');
-  xin.at("a0", A0);
-  xin.at("a1", A1);
-  xin.at("a2", A2);
-  xin.at("a3", A3);
-  xin.at("a4", A4);
+  xin.getitem("a0", A0);
+  xin.getitem("a1", A1);
+  xin.getitem("a2", A2);
+  xin.getitem("a3", A3);
+  xin.getitem("a4", A4);
   
   printv(A0);
   printv(A1);

@@ -41,6 +41,29 @@ bool check_shape_1d(uint len, const std::array<uint, N>& s, uint ndim) {
   return out;
 }
 
+// complex<T> conversion
+// ---------------------
+template<typename To, typename From>
+std::enable_if_t<std::is_fundamental<To>::value && std::is_fundamental<From>::value, To> 
+/*To*/ cast(const From& a) {
+  return static_cast<To>(a);
+}
+
+template<typename Complex, typename From>
+std::enable_if_t<std::is_same<std::complex<typename Complex::value_type>, Complex>::value && std::is_fundamental<From>::value, Complex> 
+/*Complex*/ cast(const From& a) {
+  return Complex{static_cast<typename Complex::value_type>(a), typename Complex::value_type{0}};
+}
+
+template<typename Complex1, typename Complex2>
+std::enable_if_t<std::is_same<std::complex<typename Complex1::value_type>, Complex1>::value && 
+                 std::is_same<std::complex<typename Complex2::value_type>, Complex2>::value, Complex1> 
+/*Complex2*/ cast(const Complex2& a) {
+  return Complex1{static_cast<typename Complex1::value_type>(a.real()), 
+                  static_cast<typename Complex1::value_type>(a.imag())};
+}
+
+
 using IndexBase = std::array<uint, kMaxNDimIndex>;
 
 class Index : public IndexBase {
@@ -177,13 +200,37 @@ class Array {
     std::swap(other.data_, data_);
   }
 
+  template<typename U>
+  Array<U> cast() const {
+    Array<U> arr{map.shape};
+    auto item = data();
+    auto item_arr = arr.data();
+    for (uint n = 0, N = numel(); n < N; ++n, ++item, ++item_arr) {
+      *item_arr = xmat::cast<U>(*item);
+    }
+    return arr;
+  }
+
+
+
   T& operator()(const Index& idx) {return data_[map.at(idx)]; }
   T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) {return data_[map.at(i0, i1, i2, i3)];}
 
   const T& operator()(const Index& idx) const {return data_[map.at(idx)];}
   const T& operator()(uint i0, uint i1=0, uint i2=0, uint i3=0) const {return data_[map.at(i0, i1, i2, i3)];}
 
-  void fill(const T& v) { std::fill(data_, data_ + map.numel, v); }
+  // fillers
+  // -------
+  Array& enumerate() {
+    auto item = data();
+    for (uint n = 0, N = numel(); n < N; ++n, ++item) *item = n;
+    return *this;
+  }
+
+  Array& fill(const T& v) { 
+    std::fill(data_, data_ + map.numel, v); 
+    return *this;
+  }
 
  public:
   T* data() { return data_; }
