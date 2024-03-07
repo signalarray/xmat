@@ -1,5 +1,6 @@
 
 add_executable(samples_xarr samples_xarr.cpp)
+add_executable(samples_xarray samples_xarray.cpp)
 add_executable(samples_xmat samples_xmat.cpp)
 add_executable(example_file example_file.cpp)
 

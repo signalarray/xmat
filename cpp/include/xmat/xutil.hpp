@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstring>
 #include <array>
 #include <algorithm>
 #include <exception>
@@ -10,6 +11,8 @@ namespace xmat
 {
 
 using uint = std::size_t;
+using szt = std::size_t;
+using ptdt = std::ptrdiff_t;
 
 
 template<uint N>
