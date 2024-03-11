@@ -40,6 +40,30 @@ enum class Order: char {
   F = 'F'     // Fortran style order:    by columns
 };
 
+
+// complex<T> conversion
+// ---------------------
+template<typename To, typename From>
+std::enable_if_t<std::is_fundamental<To>::value && std::is_fundamental<From>::value, To> 
+/*To*/ cast(const From& a) {
+  return static_cast<To>(a);
+}
+
+template<typename Complex, typename From>
+std::enable_if_t<std::is_same<std::complex<typename Complex::value_type>, Complex>::value && std::is_fundamental<From>::value, Complex> 
+/*Complex*/ cast(const From& a) {
+  return Complex{static_cast<typename Complex::value_type>(a), typename Complex::value_type{0}};
+}
+
+template<typename Complex1, typename Complex2>
+std::enable_if_t<std::is_same<std::complex<typename Complex1::value_type>, Complex1>::value && 
+                 std::is_same<std::complex<typename Complex2::value_type>, Complex2>::value, Complex1> 
+/*Complex2*/ cast(const Complex2& a) {
+  return Complex1{static_cast<typename Complex1::value_type>(a.real()), 
+                  static_cast<typename Complex1::value_type>(a.imag())};
+}
+
+
 namespace details {
 template<typename T0, typename T1>
 T0 conv_impl(const T0* a, const T1 index) { return *a * static_cast<T0>(index); }
@@ -84,7 +108,7 @@ struct Index : std::array<szt, ND> {
   Index() { /*???*/ fill(0); }
 
   template<typename Iter>
-  Index(Iter first, szt n) noexcept {fill(first, n);}
+  Index(Iter first, szt n) noexcept {assert(n == ndim); fill(first, n);}
 
   Index(const std::array<szt, ND>& arr) noexcept : Index(arr.begin(), arr.size()) {}
   Index(const Index& other) noexcept : Index(other.begin(), other.size()) {}
@@ -120,8 +144,8 @@ struct Index : std::array<szt, ND> {
     return size;
   }
 
-  // for dynamic ndim
-  // ----------------
+  // for dynamic ndim. just in case
+  // ------------------------------
   // return: true - [x, x, ... x, 0, 0, ..., 0],  false - [x, x, 0, x, ... ]
   bool check() const noexcept {
     auto out = std::find(begin(), end(), 0);
@@ -425,7 +449,9 @@ struct View {
 template<typename T>
 struct ArrayStorageDynamic : std::vector<T> {
   using base_t = std::vector<T>;
+  template<typename U> using cast_t = ArrayStorageDynamic<U>;
   static constexpr const char* tagstr = "dynamic";
+  ArrayStorageDynamic() {}
   ArrayStorageDynamic(std::size_t n) : base_t(n) {}
   using base_t::data;
 };
@@ -433,7 +459,9 @@ struct ArrayStorageDynamic : std::vector<T> {
 template<typename T, std::size_t N>
 struct ArrayStorageStatic : std::array<T, N> {
   using base_t = std::array<T, N>;
+  template<typename U> using cast_t = ArrayStorageStatic<U, N>;
   static constexpr const char* tagstr = "static";
+  ArrayStorageStatic() { }
   ArrayStorageStatic(std::size_t n) { assert(n <= N); }
   using base_t::data;
 };
@@ -444,10 +472,11 @@ class Array {
  public:
   using ravel_t = Ravel<ND>;
   using index_t = typename ravel_t::index_t;
-  // using storage_t = ArrayStorageHeap<T>;
   using storage_t = StorageT;
   using view_t = View<T, ND>;
 
+  template<typename U>
+  using cast_t = Array<U, ND, typename storage_t::cast_t<U>>;
 
   Array() = default;
 
@@ -465,6 +494,17 @@ class Array {
 
   View<const T, ND> view() const & noexcept { return View<const T, ND>{storage_.data(), ravel_}; }
 
+  template<typename U>
+  cast_t<U> cast() const {
+    cast_t<U> arr{shape()};
+    auto item = this->data();
+    auto item_arr = arr.data();
+    for (uint n = 0, N = numel(); n < N; ++n, ++item, ++item_arr) {
+      *item_arr = xmat::cast<U>(*item);
+    }
+    return arr;
+  }
+
   // element access
   // --------------
   T& at(const index_t& ii) noexcept { return storage_[ravel_.at(ii)]; }
@@ -472,11 +512,23 @@ class Array {
 
   template<typename ... Args>
   std::enable_if_t<(sizeof...(Args)) == ND ,T&>
-  /*T&*/ at(Args ... args) { return storage_[ravel_.at(args...)]; }
+  /*T&*/ at(Args ... args) noexcept { return storage_[ravel_.at(args...)]; }
 
   template<typename ... Args>
   std::enable_if_t<(sizeof...(Args)) == ND ,const T&>
-  /*const T&*/ at(Args ... args) const { return storage_[ravel_.at(args...)]; }
+  /*const T&*/ at(Args ... args) const noexcept { return storage_[ravel_.at(args...)]; }
+
+  // operator()
+  // ----------
+  T& operator()(const index_t& ii) noexcept { return at(ii); }
+  const T& operator()(const index_t& ii) const noexcept { return at(ii); }
+
+  template<typename ... Args> std::enable_if_t<(sizeof...(Args)) == ND ,T&> 
+  /*T&*/ operator()(Args ... args) noexcept { return at(args...); }
+
+  template<typename ... Args> std::enable_if_t<(sizeof...(Args)) == ND ,const T&>
+  /*const T&*/ operator()(Args ... args) const noexcept { return at(args...); }
+
 
   void fill(T a) {std::fill_n(data(), numel(), a); }
 
@@ -488,6 +540,9 @@ class Array {
     }
   }
 
+  void arange() { fill(T{0}, T{1}); }
+  void enumerate() { arange(); }
+
   // access
   T* data() noexcept { return storage_.data(); }
   const T* data() const noexcept { return storage_.data(); }
@@ -495,7 +550,7 @@ class Array {
   const index_t& shape() const noexcept { return ravel_.shape; }
   const index_t& stride() const noexcept { return ravel_.stride; }
   szt numel() const noexcept { return ravel_.numel(); } 
-  szt ndim() const noexcept { return ND; }
+  static szt ndim() noexcept { return ND; }
 
   Order order() const noexcept { return ravel_.order; }
   bool is_order_c() const noexcept { return ravel_.order == Order::C; }

@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <type_traits>
 
-#include "../include/xmat/xarr.hpp"
+#include "../include/xmat/xarray.hpp"
 #include "../include/xmat/xserialization.hpp"
 
 #include "common.hpp"
@@ -198,7 +198,7 @@ int sample_5() {
   // arrays
   std::vector<int> x0 = {4, 3, 2, 1};
   std::vector<std::complex<double>> x1 = {{2, 1}, {4, 3}};
-  xmat::Array<int> x2({2, 3});
+  xmat::Array<int, 2> x2({2, 3});
   x2(0, 0) = 11; x2(0, 2) = 111;
   
   print(1, "VALUES: ", 0, '-');
@@ -255,7 +255,7 @@ int sample_6() {
   std::string a6 = "std::string C++";
 
   // array
-  xmat::Array<int> a7({2, 3});
+  xmat::Array<int, 2> a7({2, 3});
   a7(0, 0) = 11; a7(0, 2) = 111;
   
   print(1, "VALUES: ", 0, '-');
@@ -312,7 +312,7 @@ int sample_6() {
   auto A4 = xin.getitem<std::vector<std::complex<double>>>("a4");
   auto A5 = xin.getitem<std::array<float, 5>>("a5");
   auto A6 = xin.getitem<std::string>("a6");
-  auto A7 = xin.getitem<xmat::Array<int>>("a7");
+  auto A7 = xin.getitem<xmat::Array<int, 2>>("a7");
   auto B0 = xin.getitem<double>("b0");
   auto B1 = xin.getitem<int>("b1");
 

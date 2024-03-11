@@ -5,7 +5,7 @@
 #include <type_traits>
 
 #include "xformat.hpp"
-#include "xarr.hpp"
+#include "xarray.hpp"
 
 namespace xmat
 {
@@ -19,6 +19,28 @@ class DeserializationError : public std::runtime_error {
  public:
   using std::runtime_error::runtime_error;
 };
+
+
+template<uint N>
+bool check_shape_0d(const std::array<uint, N>& s, uint ndim) {
+  bool out = true;
+  for(uint n : s) { out = out && n == 0; }
+  return out;
+}
+
+template<uint N>
+bool check_shape_1d(uint len, const std::array<uint, N>& s, uint ndim) {
+  uint k = 0, m = 0;
+  for(uint n = 0; n < ndim; ++n) {
+    const uint a = s[n];
+    if(a == len) { ++k; } 
+    else if(a == 1) { ++m; }
+  }
+  bool out = k == 1 && m == ndim - 1;
+  for(uint n = ndim; n < N; ++n) { out = out && s[n] == 0; }
+  return out;
+}
+
 
 // ------
 // scalar
@@ -195,19 +217,19 @@ struct XSerial<std::string> {
 // -----------
 // xmat::Array
 // -----------
-template <typename T>
-struct XSerial<Array<T>, std::enable_if_t<TypeInfo<T>::registered>> {
-  using U = Array<T>;
-
+template <typename T, std::size_t ND, class StorageT>
+struct XSerial<Array<T, ND, StorageT>, std::enable_if_t<TypeInfo<T>::registered>> {
+  using U = Array<T, ND, StorageT>;
+  
   static Block dump(const U& x) {
     xmat::Block block;
     xmat::TypeInfo<T> info;
     xmat::assign(block.typename_, info.name);
-    assert(x.map.ndim <= block.shape_.size());
-    std::copy_n(x.map.shape.begin(), x.map.ndim, block.shape_.begin());
-    block.numel_ = x.map.numel;
+    assert(x.ndim() <= block.shape_.size());
+    std::copy_n(x.shape().begin(), x.ndim(), block.shape_.begin());
+    block.numel_ = x.numel();
     block.typesize_ = info.size;
-    block.ndim_ = x.map.ndim;
+    block.ndim_ = x.ndim();
     block.ptr_ = reinterpret_cast<const char*>(x.data());
     return block;
   }
@@ -218,7 +240,7 @@ struct XSerial<Array<T>, std::enable_if_t<TypeInfo<T>::registered>> {
     auto shape = y.shape();
     return block.check_element<T>()
            && block.numel_ != y.numel()
-           && block.ndim_ > kMaxNDimIndex
+           && block.ndim_ > ND
            && std::equal(shape.cbegin(), shape.cbegin() + block.ndim_, 
                          block.shape_.cbegin());
   }
@@ -230,7 +252,7 @@ struct XSerial<Array<T>, std::enable_if_t<TypeInfo<T>::registered>> {
     if(flag_fix && block.numel_ != y.numel()){
       throw DeserializationError("wrong numel|ndim");
     }
-    if(block.ndim_ > kMaxNDimIndex){ 
+    if(block.ndim_ > ND){ 
       throw DeserializationError("ndim is too big");
     }
 
@@ -239,8 +261,8 @@ struct XSerial<Array<T>, std::enable_if_t<TypeInfo<T>::registered>> {
       if(flag_fix) { 
         throw DeserializationError("wrong shape");
       } else {
-        Index shape{block.shape_.cbegin(), block.shape_.cend()};
-        y = Array<T>{shape};
+        typename U::index_t shape{block.shape_.cbegin(), block.ndim_};
+        y = U{shape}; // TODO - spetialize for array_static
       }
     }
     stream.seek(block.pos_, std::ios_base::beg);
