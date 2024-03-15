@@ -12,4 +12,7 @@ temp_*
 # util folders like: .vscode/, .idea/
 **/.*/
 
+# matlab
 *.asv
+*.mat
+*.fig

@@ -261,7 +261,10 @@ struct XSerial<Array<T, ND, StorageT>, std::enable_if_t<TypeInfo<T>::registered>
       if(flag_fix) { 
         throw DeserializationError("wrong shape");
       } else {
-        typename U::index_t shape{block.shape_.cbegin(), block.ndim_};
+        typename U::index_t shape;
+        shape.fill(1);
+        // std::copy_n(block.shape_.cbegin(), block.ndim_, shape.begin());
+        std::copy_n(block.shape_.cbegin() + (ND - block.ndim_), block.ndim_, shape.begin());
         y = U{shape}; // TODO - spetialize for array_static
       }
     }
@@ -275,4 +278,3 @@ struct XSerial<Array<T, ND, StorageT>, std::enable_if_t<TypeInfo<T>::registered>
 };
 
 } // namespace xmat
-

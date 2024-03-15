@@ -20,7 +20,11 @@ classdef Block < handle
 
 
   methods (Static)
-    function bd = make(A, name)
+    function bd = make(A, name, ndim_force)
+      if nargin < 2
+        ndim_force = [];
+      end
+
       if nargin < 2
         name = 'default';
       end
@@ -29,6 +33,13 @@ classdef Block < handle
       typesize = xmat.Util.k_TYPES_MAP_XMAT.(typename){2};
       ndim = ndims(A);
 
+      if ~isempty(ndim_force)
+        if ndim_force < ndims(A)
+          error('wrong ndim_force: %d', ndim_force);
+        end
+        shape(end + 1 : end + (ndim_force - ndim)) = 1;
+        ndim = ndim_force;
+      end
       bd = xmat.Block(name, typename, typesize, ndim, shape);
     end
 
@@ -94,6 +105,17 @@ classdef Block < handle
       os.write(uint8(obj.typesize));
       os.write(uint8(obj.ndim));
       os.write(xmat.Block.k_SIGNATURE_END);
+    end
+
+
+    function print(obj, args)
+      if nargin < 2
+        args.span = 1;
+      end
+      template = sprintf('%%%ss: <%%s, %%s> %%s', num2str(args.span));
+
+      class_ = xmat.Util.k_TYPES_MAP_XMAT.(obj.typename){1};
+      fprintf(template, obj.name, class_, obj.typename, mat2str(obj.shape));
     end
   end
 end

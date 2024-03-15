@@ -37,12 +37,31 @@ classdef Output < handle
       obj.h.write(obj.ostream);
     end
 
-    function setitem(obj, name, A)
+		function setitem(obj, name, A, ndim_force, order_tag)
       % write A to ostream
       % Parameters:
       % -----------
       % name: char
       % A: value
+      % ndim_force: int
+      %   matlab reduce last 1th dimentions (ndims(ones(2, 2, 1) -> 2, but not 3)). `ndim_force` set dim explicitly
+      % order_tag: 'c' or 'f'
+      %   `f` - default. `c` - says save element order as F-order, and flip shape instead.
+
+			if nargin < 4
+				ndim_force = [];
+			elseif ~isnumeric(ndim_force)
+				error('wrong `ndim_force`.type');
+			end
+			if nargin < 5 || isempty(order_tag)
+				order_tag = 'f';
+			elseif ~(ischar(order_tag) || isstring(order_tag))
+				error('wrong `order_tag`.type');
+			end
+
+			if ~any(strcmp(order_tag, ["c", "f"]))
+				error('wrong order tag: %s', order_tag);
+			end
 
       if isstruct(A)
         obj.add_struct(obj, A);
@@ -54,10 +73,14 @@ classdef Output < handle
       end
 
       % write block descriptor
-      bd = xmat.Block.make(A, name);
+      bd = xmat.Block.make(A, name, ndim_force);
+			if order_tag == 'c'
+				bd.shape = flip(bd.shape);
+			else
+				A = permute(A, ndims(A):-1:1);
+			end
       bd.write(obj.ostream, obj.h);
 
-      % write data
       if isreal(A)
         obj.ostream.write(A(:));
       else  % if complex

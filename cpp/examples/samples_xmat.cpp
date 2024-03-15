@@ -304,7 +304,7 @@ int sample_6() {
   // -------------------------
   assert(xin.is<std::complex<double>>("a1"));
   assert(xin.is<std::vector<std::complex<double>>>("a1"));
-  assert((xin.is<std::array<std::complex<double>, 1>>("a1")));  
+  assert((xin.is<std::array<std::complex<double>, 1>>("a1")));
   auto A1 = xin.getitem<std::complex<double>>("a1");
   // ------------------------------------------
   auto A2 = xin.getitem<char>("a2");

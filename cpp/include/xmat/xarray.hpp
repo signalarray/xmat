@@ -20,7 +20,8 @@ i     ndim  numel shape
 #include <cstddef>
 #include <cassert>
 #include <cmath>
-// #include <iostream>
+#include <complex>
+#include <iostream>
 #include <iomanip>
 #include <array>
 #include <vector>
@@ -271,7 +272,7 @@ struct Ravel {
   }
 
   template<szt N>
-  std::enable_if_t<N < ND, Ravel<N>>
+  std::enable_if_t<(N < ND), Ravel<N>>
   /*Ravel<N>*/ squeese() const {
     Ravel<N> out;
     szt k = -1;
@@ -583,7 +584,7 @@ array_static() {
 
 // print functions
 // ------------------------
-std::ostream& operator<<(std::ostream& os, const xmat::Slice& s) {
+inline std::ostream& operator<<(std::ostream& os, const xmat::Slice& s) {
   os << "["<< s.start <<  ", " << s.stop <<  ", " <<  s.step <<  "]";
   return os;
 }

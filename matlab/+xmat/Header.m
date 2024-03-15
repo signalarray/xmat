@@ -6,7 +6,7 @@ classdef Header < handle
     k_FORMAT_SIGNATURE_SIZE = 4;
     k_FORMAT_SIGNATURE = ['XYZ'  char(0)];
     k_FORMAT_FOOTER = 'END'
-    k_INTX_SIZE = 4
+    k_INTX_SIZE = 8
     k_MAX_BLOCK_NAME_LEN = 32
     k_MAX_TYPE_NAME_LEN = 8
     k_MAX_NDIM = 8
