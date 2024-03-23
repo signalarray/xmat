@@ -1,5 +1,5 @@
 
-add_executable(samples_xutil samples_xutil.cpp)
+add_executable(samples_xutil samples_xutil.cpp samples_xutil_link.cpp)
 add_executable(samples_xarray samples_xarray.cpp)
 add_executable(samples_xmat samples_xmat.cpp)
 add_executable(samples_xstream samples_xstream.cpp)

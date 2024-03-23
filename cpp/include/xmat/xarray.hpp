@@ -445,30 +445,115 @@ struct View {
 };
 
 
-// Array
+// Array Storages: arr-stor
 // ---------------------------------------------------
 template<typename T>
-struct ArrayStorageDynamic : std::vector<T> {
+struct arstor_dyn {
   using base_t = std::vector<T>;
-  template<typename U> using cast_t = ArrayStorageDynamic<U>;
   static constexpr const char* tagstr = "dynamic";
-  ArrayStorageDynamic() {}
-  ArrayStorageDynamic(std::size_t n) : base_t(n) {}
-  using base_t::data;
+  
+  arstor_dyn() {}
+
+  template<typename U> using cast_t = arstor_dyn<U>;
+  template<typename U> cast_t<U> cast_clone() const noexcept { return cast_t<U>{}; }
+  
+  void init(std::size_t n) { impl.resize(n); }
+  T* data() noexcept { return impl.data(); }
+  const T* data() const noexcept { return impl.data(); }
+  size_t size() const noexcept { return impl.size(); }
+
+  std::vector<T> impl;
 };
+
 
 template<typename T, std::size_t N>
-struct ArrayStorageStatic : std::array<T, N> {
+struct arstor_static {
   using base_t = std::array<T, N>;
-  template<typename U> using cast_t = ArrayStorageStatic<U, N>;
   static constexpr const char* tagstr = "static";
-  ArrayStorageStatic() { }
-  ArrayStorageStatic(std::size_t n) { assert(n <= N); }
-  using base_t::data;
+
+  arstor_static() {}
+
+  template<typename U> using cast_t = arstor_static<U, N>;
+  template<typename U> cast_t<U> cast_clone() const noexcept { return cast_t<U>{}; }
+
+  void init(std::size_t n) { assert(n <= N && "exceed storage size"); }
+  T* data() noexcept { return impl.data(); }
+  const T* data() const noexcept { return impl.data(); }
+  static size_t size() noexcept { return N; }
+
+  std::array<T, N> impl;
 };
 
 
-template<typename T, szt ND, class StorageT = ArrayStorageDynamic<T>>
+// Storage based on Memory Source
+template<typename T, size_t Aln = alignof(T)>
+struct arstor_ms {
+  using base_t = memsource;
+  static const size_t alignment = Aln;
+  static constexpr const char* tagstr = "memsource";
+  
+#ifdef XMAT_ARSTOR_MS_DEFAULT_CONSTRUCTABLE
+  // can help if template class explicit intance:
+  // template class xmat::Array<int, 2, xmat::arstor_ms<int>>;
+#endif
+  arstor_ms() { memsource_ = &glob_memsource_null::get(); }
+  arstor_ms(memsource* memsrc) : memsource_{memsrc} { }
+
+  template<typename U> using cast_t = arstor_ms<U>;
+  template<typename U> cast_t<U> cast_clone() const noexcept { return cast_t<U>{memsource_}; }
+
+  ~arstor_ms() {
+    if(data_) {
+      assert(memsource_->pointer_in_buffer(data_) && "pointer not in memsource");
+      memsource_->deallocate(data_, sizeof(T) * N_); 
+    }
+  }
+
+  arstor_ms(const arstor_ms& other) {
+    memsource_ = other.memsource_;
+    if (!other.N_) { return; }
+    N_ = other.N_;
+    data_ = memsource_->allocate<T>(N_);
+    std::copy_n(other.data_, N_, data_);
+  }
+
+  arstor_ms(arstor_ms&& other) noexcept { swap(*this, other); }
+
+  arstor_ms& operator=(arstor_ms other) noexcept {
+    swap(*this, other);
+    return *this;
+  }
+
+  friend void swap(arstor_ms& lhs, arstor_ms& rhs) {
+    using std::swap;
+    swap(lhs.memsource_, rhs.memsource_);
+    swap(lhs.data_, rhs.data_);
+    swap(lhs.N_, rhs.N_);
+  }
+
+  void init(std::size_t n) {
+    assert(memsource_ && "memsource not assigned");
+    assert(memsource_ != &glob_memsource_null::get() && "tries use `glob_memsource_null`"); 
+    if (!memsource_) {
+      return;
+    }
+    N_ = n;
+    data_ = memsource_->allocate<T>(N_); // will throw exception if lack of space
+  }
+
+  T* data() noexcept { return data_; }
+  const T* data() const noexcept { return data_; }
+  size_t size() const noexcept { return N_; }
+
+  memsource* memsource_ = nullptr;
+  T* data_ = nullptr;
+  size_t N_ = 0;
+};
+
+
+// Array
+// ---------------------------------------------------
+template<typename T, szt ND, class StorageT = arstor_dyn<T>>
 class Array {
  public:
   using ravel_t = Ravel<ND>;
@@ -481,23 +566,31 @@ class Array {
 
   Array() = default;
 
-  Array(index_t shape) : ravel_{shape}, storage_(ravel_.numel()) {}
+  Array(index_t shape) : ravel_{shape} { storage_.init(ravel_.numel()); }
 
-  void swap(Array& other) noexcept {
-    using std::swap;
-    swap(ravel_, other.ravel_);
-    swap(storage_, other.storage_);
+  Array(index_t shape, StorageT&& storage)
+    : ravel_{shape}, storage_{std::move(storage)} {
+    storage_.init(shape.numel());
   }
 
-  friend void swap(Array& lhs, Array& rhs) noexcept { lhs.swap(rhs); }
+  Array(const Array& ) = default;
+  Array(Array&& other) { swap(*this, other); }
+  Array& operator=(Array other) { swap(*this, other); return *this; }
+  
+  friend void swap(Array& lhs, Array& rhs) noexcept {
+    using std::swap;
+    swap(lhs.ravel_, rhs.ravel_);
+    swap(lhs.storage_, rhs.storage_);
+  }
 
   View<T, ND> view() & noexcept { return View<T, ND>{storage_.data(), ravel_}; }
 
   View<const T, ND> view() const & noexcept { return View<const T, ND>{storage_.data(), ravel_}; }
 
+  // not shure it should be here
   template<typename U>
   cast_t<U> cast() const {
-    cast_t<U> arr{shape()};
+    cast_t<U> arr{shape(), storage_.template cast_clone<U>()};
     auto item = this->data();
     auto item_arr = arr.data();
     for (uint n = 0, N = numel(); n < N; ++n, ++item, ++item_arr) {
@@ -508,20 +601,22 @@ class Array {
 
   // element access
   // --------------
-  T& at(const index_t& ii) noexcept { return storage_[ravel_.at(ii)]; }
-  const T& at(const index_t& ii) const noexcept { return storage_[ravel_.at(ii)]; }
+  T& at(const index_t& ii) noexcept { return storage_.data()[ravel_.at(ii)]; }
+
+  const T& at(const index_t& ii) const noexcept { return storage_.data()[ravel_.at(ii)]; }
 
   template<typename ... Args>
   std::enable_if_t<(sizeof...(Args)) == ND ,T&>
-  /*T&*/ at(Args ... args) noexcept { return storage_[ravel_.at(args...)]; }
+  /*T&*/ at(Args ... args) noexcept { return storage_.data()[ravel_.at(args...)]; }
 
   template<typename ... Args>
   std::enable_if_t<(sizeof...(Args)) == ND ,const T&>
-  /*const T&*/ at(Args ... args) const noexcept { return storage_[ravel_.at(args...)]; }
+  /*const T&*/ at(Args ... args) const noexcept { return storage_.data()[ravel_.at(args...)]; }
 
   // operator()
   // ----------
   T& operator()(const index_t& ii) noexcept { return at(ii); }
+
   const T& operator()(const index_t& ii) const noexcept { return at(ii); }
 
   template<typename ... Args> std::enable_if_t<(sizeof...(Args)) == ND ,T&> 
@@ -568,17 +663,17 @@ class Array {
 // array - make functions
 // ----------------------
 template<typename T, szt ND, typename U>
-Array<T, ND, ArrayStorageDynamic<T>>
+Array<T, ND, arstor_dyn<T>>
 array_dynamic(const U(&ii)[ND]) {
   Index<ND> idx{std::begin(ii), ND};
-  return Array<T, ND, ArrayStorageDynamic<T>>{idx};
+  return Array<T, ND, arstor_dyn<T>>{idx};
 }
 
 template<typename T, szt ... Args>
-Array<T, Shape<Args...>::ndim, ArrayStorageStatic<T, Shape<Args...>::numel>>
+Array<T, Shape<Args...>::ndim, arstor_static<T, Shape<Args...>::numel>>
 array_static() {
   using shape_t = Shape<Args...>;
-  return Array<T, shape_t::ndim, ArrayStorageStatic<T, shape_t::numel>>{shape_t::index()};
+  return Array<T, shape_t::ndim, arstor_static<T, shape_t::numel>>{shape_t::index()};
 }
 
 

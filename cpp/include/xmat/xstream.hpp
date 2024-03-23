@@ -8,28 +8,19 @@
 #include <algorithm>
 #include <exception>
 #include <utility>
-
+#include <new>
 
 #include "xutil.hpp"
 
 
 namespace xmat {
 
-using bbuf_item_t = std::int8_t;
+using bbuf_item_t = char;
 
-enum class bbuf_stor_tag { dyn, stt, vw, cvw};
+struct bbuf_storage_dyn {
+  bbuf_storage_dyn() = default;
 
-struct bbuf_stor_dyn {
-  static const bbuf_stor_tag tag = bbuf_stor_tag::dyn;
-
-  bbuf_stor_dyn() = default;
-  bbuf_stor_dyn(bbuf_item_t* ptr, std::size_t n) : impl(ptr, ptr + n) {}   // copy `ptr:ptr+n` into itself
-
-  // buffer controll
-  std::size_t size() const noexcept { return impl.size(); }
-  std::size_t max_size() const noexcept { return impl.max_size(); }
-
-  bool reserve(std::size_t size_request) {
+  bool size_request(std::size_t size_request) {
     if (size_request > impl.size()) {
       impl.resize(size_request);
     }
@@ -37,91 +28,74 @@ struct bbuf_stor_dyn {
   }
 
   // content acccess
-  const bbuf_item_t* data() const noexcept { return impl.data(); }
   bbuf_item_t* data() noexcept { return impl.data(); }
+  const bbuf_item_t* data() const noexcept { return impl.data(); }
+  std::size_t size() const noexcept { return impl.size(); }
+  std::size_t max_size() const noexcept { return impl.max_size(); }
 
  public:
   std::vector<bbuf_item_t> impl;
 };
 
 
-template<std::size_t N>
-struct bbuf_stor_static {
-  static const bbuf_stor_tag tag = bbuf_stor_tag::stt;
+struct bbuf_storage_ms {
+  // bbuf_storage_ms() = default;
+  bbuf_storage_ms(memsource* msrc) : memsource_{msrc} {}
 
-  bbuf_stor_static() = default;
-  bbuf_stor_static(bbuf_item_t* ptr, std::size_t n) { 
-    assert(n <= N); std::copy_n(ptr, n, impl.begin());
+  bool size_request(size_t n) noexcept { // think about exception instead flag
+    // check local mem-menager
+    if (n <= N_ ) return true;
+
+    // try to reallocate from memory source
+    return reserve(n);
   }
 
-  // buffer control
-  static std::size_t size() noexcept { return N; }
-  static std::size_t max_size() noexcept { return N; }
-  static bool reserve(std::size_t size_request) noexcept { return size_request <= N; }
+  bool reserve(size_t n) {
+    bool out = false;
+    size_t nn = 1 << next_pow2(n);
 
-  // content access
-  bbuf_item_t* data() noexcept { return impl.data(); }
-  const bbuf_item_t* data() const noexcept { return impl.data(); }
+    size_t nout = 0;
+    void* ptr = nullptr;
+    ptr = memsource_->extend_reserve(data_, n, nn, &nout, std::nothrow);
+    if (!ptr) {
+      ptr = memsource_->reserve(n, nn, &nout, std::nothrow);
+    }
+    if (ptr) {
+      out = true;
+      std::copy_n(data_, N_, static_cast<char*>(ptr));
+      data_ = static_cast<char*>(ptr);
+      N_ = n;
+    }
+    else {
+      throw std::runtime_error("exceed memory_source space : " __FILE__);
+    }
+    return out;
+  }
 
- public:
-  std::array<bbuf_item_t, N> impl;
+  bbuf_item_t* data() noexcept { return data_; }
+  const bbuf_item_t* data() const noexcept { return data_; }
+  size_t size() const noexcept { return N_; }
+  size_t max_size() const noexcept { return memsource_->space(); }
+
+  memsource* memsource_ = nullptr;
+  bbuf_item_t* data_ = nullptr;
+  size_t N_ = 0;
 };
 
 
-struct bbuf_stor_view {
-  static const bbuf_stor_tag tag = bbuf_stor_tag::vw;
-
-  bbuf_stor_view() = default;
-  bbuf_stor_view(bbuf_item_t* ptr, std::size_t n) : ptr{ptr}, size_{n} {}
-
-  // buffer control
-  std::size_t size() const noexcept { return size_; }
-  std::size_t max_size() const noexcept { return size_; }
-  bool reserve(std::size_t size_request) noexcept { return size_request <= size_; }
-
-  // content access
-  bbuf_item_t* data() noexcept { return ptr; }
-  const bbuf_item_t* data() const noexcept { return ptr; }
-
- public:
-  bbuf_item_t* ptr = nullptr;
-  std::size_t size_ = 0;
-};
-
-
-struct bbuf_stor_cview {
-  static const bbuf_stor_tag tag = bbuf_stor_tag::cvw;
-
-  bbuf_stor_cview() = default;
-  bbuf_stor_cview(const bbuf_item_t* ptr, std::size_t n) : ptr{ptr}, size_{n} {}
-
-  // buffer control
-  std::size_t size() noexcept { return size_; }
-  std::size_t max_size() noexcept { return size_; }
-  // [cansel] bool reserve(std::size_t size_request) noexcept; 
-
-  // content access
-  // [cansel] bbuf_item_t* data() noexcept;
-  const bbuf_item_t* data() const noexcept { return ptr; }
-
- public:
-  const bbuf_item_t* ptr = nullptr;
-  std::size_t size_ = 0;
-};
-
-
-template<class StorageT = bbuf_stor_dyn>
+template<class StorageT = bbuf_storage_dyn>
 class obbuf {
  public:
   using storage_t = StorageT;
 
   obbuf() {}
+  obbuf(memsource* memsrc) : storage_{memsrc} {}
 
   obbuf& write(const char* ptr, std::streamsize n) {
     std::size_t cursor_old = cursor_;
     cursor_ += n;
     size_ = std::max(size_, cursor_);
-    if (storage_.reserve(size_)) { 
+    if (storage_.size_request(size_)) {
       std::copy_n(ptr, n, storage_.data() + cursor_old);
     } else {
       state_ = false;
@@ -132,24 +106,20 @@ class obbuf {
   std::size_t size() const noexcept { return size_; }
 
  public:
-  bbuf_stor_dyn storage_;
+  storage_t storage_;
   std::size_t size_ = 0;
   std::size_t cursor_ = 0;
-  bool state_ = 1;
+  bool state_ = true;
 };
 
 
-template<class StorageT = bbuf_stor_cview>
 class ibbuf {
  public:
-  using storage_t = StorageT; 
-
   ibbuf() {}
 
   std::size_t size() const noexcept { return size_; }
 
  public:
-  storage_t storage_;
   std::size_t size_;
   std::size_t cursor_ = 0;
 };

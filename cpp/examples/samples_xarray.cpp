@@ -259,7 +259,7 @@ int sample_3() {
   print(1, "swap:", 0, '-');
   xmat::print(*kOutStream, a1);
   xmat::print(*kOutStream, a00);
-  a1.swap(a00);
+  std::swap(a1, a00);
   xmat::print(*kOutStream, a1);
   xmat::print(*kOutStream, a00);
 
@@ -272,13 +272,13 @@ int sample_4() {
   print("Array on stack ", 0, '-');
 
   print(1, "make manually", 0, '-');
-  xmat::Array<int, 2, xmat::ArrayStorageStatic<int, 16>> a0{{2, 3}};
+  xmat::Array<int, 2, xmat::arstor_static<int, 16>> a0{{2, 3}};
   a0.fill(0, 1);
   xmat::print(*kOutStream, a0);
 
   print(1, "make manually", 0, '-');
   xmat::Shape<2, 4> sh0;
-  xmat::Array<int, sh0.ndim, xmat::ArrayStorageStatic<int, sh0.numel>> a1{sh0.index()};
+  xmat::Array<int, sh0.ndim, xmat::arstor_static<int, sh0.numel>> a1{sh0.index()};
   a1.fill(10, 1);
   xmat::print(*kOutStream, a1);
 
@@ -442,12 +442,51 @@ int sample_8() {
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
+
+int sample_9() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("array<T, arstor_ms<T>>", 0, '-');
+  
+  print("Array creation, copy, assign", 0, '-');
+  auto gmemsrc = &xmat::glob_memsource::reset(1024);
+  xmat::Array<int, 2, xmat::arstor_ms<int>> a0({3, 4}, gmemsrc);
+  a0.enumerate();
+  printvl(a0);
+
+  print(1, "array<T, arstor_ms<T>>.copy_ctor", 0, '-');
+  xmat::Array<int, 2, xmat::arstor_ms<int>> a1(a0);
+  a1(1, 1) = -11;
+  printvl(a1);
+
+  print(1, "array<T, arstor_ms<T>>.copy_assignment", 0, '-');
+  xmat::Array<int, 2, xmat::arstor_ms<int>> a2({3, 6}, gmemsrc);
+  a2.enumerate();
+  printvl(a2);
+  printvl(a1 = a2);
+
+  print(1, "array<T, arstor_ms<T>>.move_copy", 0, '-');
+  xmat::Array<int, 2, xmat::arstor_ms<int>> a3(std::move(a2));
+  printvl(a2);
+  printvl(a3);
+  printv(a2.shape());
+  printv(a3.shape());
+
+  print(1, "array<T, arstor_ms<T>>.move_assignment", 0, '-');
+  printvl(a0 = std::move(a3));
+  printvl(a3);
+  printv(a0.shape());
+  printv(a3.shape());
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
 }
 
 
 int main() {
   print("START: " __FILE__, 0, '=');
-  sample_8();
+  sample_9();
   print("END: " __FILE__, 0, '=');
   return EXIT_SUCCESS;
 }
