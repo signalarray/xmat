@@ -208,14 +208,23 @@ szt init_stride_order_c(const C1& shape, C2& stride, szt Nd) {
 }
 
 template<class C1, class C2>
+size_t check_contigous_order_c(const C1& shape, const C2& stride, size_t Nd) {
+  size_t k = 0, s = 1;
+  for (szt i = Nd - 1, end_(-1); i != end_; --i, ++k) { 
+    if (stride[i] != s) break;
+    s *= shape[i + 1];
+  }
+  return k;
+}
+
+template<class C1, class C2>
 szt init_stride_order_f(const C1& shape, C2& stride, szt Nd) {
   stride[0] = 1;
-  for (uint i = 1; i != Nd; ++i) {
+  for (size_t i = 1; i != Nd; ++i) {
     stride[i] = stride[i - 1] * shape[i - 1];
   }
   return Nd;
 }
-
 
 // \brief Converts a tuple of index arrays into an array of flat indices,
 // applying boundary modes to the multi-index.
@@ -297,9 +306,13 @@ struct Ravel {
     return out;
   }
 
+  bool contigous() const noexcept {
+    assert(order == Order::C);
+    return check_contigous_order_c(shape, stride, ndim);
+  }
+
   // properties
   // ----------
-  // ???
   void set_order(Order order_new) noexcept {
     if (order_new != order) {
       order = order_new;
@@ -421,6 +434,10 @@ struct View {
     return View<T, N>{data_, rv};
   }
 
+  bool contigous() const noexcept {
+    return ravel_.contigous();
+  }
+
   // iterators
   // ---------
   Iterator<T, ND> begin() noexcept { return Iterator<T, ND>{data_, ravel_}; }
@@ -445,86 +462,61 @@ struct View {
 };
 
 
-// Array Storages: arr-stor
-// ---------------------------------------------------
-template<typename T>
-struct arstor_dyn {
-  using base_t = std::vector<T>;
-  static constexpr const char* tagstr = "dynamic";
+// ------------------------------------------------------------
+// Array Storage
+// ------------------------------------------------------------
+
+// Data storage for Array<T, ND>
+// 
+// Examples:
+// ---------
+// memsource* gmemsrc = &glob_memptr::reset(1<<10);
+// array_storage_ms<T, memallocator> st1{memallocator{gmemsrc}};
+//
+// MemSourceT examples:
+// --------------------
+//  std::allocator<T>
+//  xmat::glob_memallocator<T, glob_memsource(default)>
+//  cmat::memallocator<T>
+template<typename T, typename MemSourceT>
+struct NArrayStorageMS {
+  using memory_source_t = MemSourceT;
   
-  arstor_dyn() {}
+  // See: about conditional default constructor:
+  // https://stackoverflow.com/questions/47321008/constructors-for-templates-that-do-not-have-default-constructors  
+  static constexpr bool k_has_default_constructor = std::is_default_constructible<MemSourceT>::value;
 
-  template<typename U> using cast_t = arstor_dyn<U>;
-  template<typename U> cast_t<U> cast_clone() const noexcept { return cast_t<U>{}; }
-  
-  void init(std::size_t n) { impl.resize(n); }
-  T* data() noexcept { return impl.data(); }
-  const T* data() const noexcept { return impl.data(); }
-  size_t size() const noexcept { return impl.size(); }
+  template<bool HDC = k_has_default_constructor, typename std::enable_if<HDC, int>::type = 0>
+  NArrayStorageMS() {}
 
-  std::vector<T> impl;
-};
+  NArrayStorageMS(const memory_source_t& memsrc) : memsource_{memsrc} {}
 
+  // template<typename U> using cast_t = array_storage_ms<U, MemorySourceT>;
+  // template<typename U> cast_t<U> cast_clone() const noexcept { return cast_t<U>{memsource_}; }
 
-template<typename T, std::size_t N>
-struct arstor_static {
-  using base_t = std::array<T, N>;
-  static constexpr const char* tagstr = "static";
-
-  arstor_static() {}
-
-  template<typename U> using cast_t = arstor_static<U, N>;
-  template<typename U> cast_t<U> cast_clone() const noexcept { return cast_t<U>{}; }
-
-  void init(std::size_t n) { assert(n <= N && "exceed storage size"); }
-  T* data() noexcept { return impl.data(); }
-  const T* data() const noexcept { return impl.data(); }
-  static size_t size() noexcept { return N; }
-
-  std::array<T, N> impl;
-};
-
-
-// Storage based on Memory Source
-template<typename T, size_t Aln = alignof(T)>
-struct arstor_ms {
-  using base_t = memsource;
-  static const size_t alignment = Aln;
-  static constexpr const char* tagstr = "memsource";
-  
-#ifdef XMAT_ARSTOR_MS_DEFAULT_CONSTRUCTABLE
-  // can help if template class explicit intance:
-  // template class xmat::Array<int, 2, xmat::arstor_ms<int>>;
-#endif
-  arstor_ms() { memsource_ = &glob_memsource_null::get(); }
-  arstor_ms(memsource* memsrc) : memsource_{memsrc} { }
-
-  template<typename U> using cast_t = arstor_ms<U>;
-  template<typename U> cast_t<U> cast_clone() const noexcept { return cast_t<U>{memsource_}; }
-
-  ~arstor_ms() {
+  ~NArrayStorageMS() {
     if(data_) {
-      assert(memsource_->pointer_in_buffer(data_) && "pointer not in memsource");
-      memsource_->deallocate(data_, sizeof(T) * N_); 
+      memsource_.deallocate(data_, N_);
     }
   }
 
-  arstor_ms(const arstor_ms& other) {
-    memsource_ = other.memsource_;
+  NArrayStorageMS(const NArrayStorageMS& other) 
+    : memsource_{other.memsource_} {
     if (!other.N_) { return; }
     N_ = other.N_;
-    data_ = memsource_->allocate<T>(N_);
+    data_ = memsource_.allocate(N_);
     std::copy_n(other.data_, N_, data_);
   }
 
-  arstor_ms(arstor_ms&& other) noexcept { swap(*this, other); }
+  NArrayStorageMS(NArrayStorageMS&& other) noexcept
+  : memsource_{other.memsource_}  { swap(*this, other); }
 
-  arstor_ms& operator=(arstor_ms other) noexcept {
+  NArrayStorageMS& operator=(NArrayStorageMS other) noexcept {
     swap(*this, other);
     return *this;
   }
 
-  friend void swap(arstor_ms& lhs, arstor_ms& rhs) {
+  friend void swap(NArrayStorageMS& lhs, NArrayStorageMS& rhs) {
     using std::swap;
     swap(lhs.memsource_, rhs.memsource_);
     swap(lhs.data_, rhs.data_);
@@ -532,20 +524,15 @@ struct arstor_ms {
   }
 
   void init(std::size_t n) {
-    assert(memsource_ && "memsource not assigned");
-    assert(memsource_ != &glob_memsource_null::get() && "tries use `glob_memsource_null`"); 
-    if (!memsource_) {
-      return;
-    }
     N_ = n;
-    data_ = memsource_->allocate<T>(N_); // will throw exception if lack of space
+    data_ = memsource_.allocate(N_); // will throw exception if lack of space
   }
 
   T* data() noexcept { return data_; }
   const T* data() const noexcept { return data_; }
   size_t size() const noexcept { return N_; }
 
-  memsource* memsource_ = nullptr;
+  memory_source_t memsource_;
   T* data_ = nullptr;
   size_t N_ = 0;
 };
@@ -553,31 +540,43 @@ struct arstor_ms {
 
 // Array
 // ---------------------------------------------------
-template<typename T, szt ND, class StorageT = arstor_dyn<T>>
-class Array {
+// 
+// MemSourceT:
+//  std::allocator<T>
+//  xmat::glob_memallocator<T, glob_memsource(default)>
+//  cmat::memallocator<T>
+template<typename T, szt ND, class MemSourceT>
+class NArray_ {
  public:
   using ravel_t = Ravel<ND>;
   using index_t = typename ravel_t::index_t;
-  using storage_t = StorageT;
+  using storage_t = NArrayStorageMS<T, MemSourceT>;
   using view_t = View<T, ND>;
 
-  template<typename U>
-  using cast_t = Array<U, ND, typename storage_t::cast_t<U>>;
+  static constexpr bool k_has_default_constructor = std::is_default_constructible<MemSourceT>::value;
 
-  Array() = default;
+  // constructors
+  template<bool HDC = k_has_default_constructor, typename std::enable_if<HDC, int>::type = 0>
+  NArray_() {}
 
-  Array(index_t shape) : ravel_{shape} { storage_.init(ravel_.numel()); }
+  NArray_(const MemSourceT& memsrs) : storage_{memsrs} { }
 
-  Array(index_t shape, StorageT&& storage)
-    : ravel_{shape}, storage_{std::move(storage)} {
+  template<bool HDC = k_has_default_constructor, typename std::enable_if<HDC, int>::type = 0>
+  NArray_(index_t shape) 
+    : ravel_{shape} { 
+    storage_.init(shape.numel()); 
+  }
+
+  NArray_(index_t shape, const MemSourceT& memsrs) 
+    : ravel_{shape}, storage_{memsrs} {
     storage_.init(shape.numel());
   }
 
-  Array(const Array& ) = default;
-  Array(Array&& other) { swap(*this, other); }
-  Array& operator=(Array other) { swap(*this, other); return *this; }
+  NArray_(const NArray_& ) = default;
+  NArray_(NArray_&& other) : storage_{storage_} { swap(*this, other); }
+  NArray_& operator=(NArray_ other) { swap(*this, other); return *this; }
   
-  friend void swap(Array& lhs, Array& rhs) noexcept {
+  friend void swap(NArray_& lhs, NArray_& rhs) noexcept {
     using std::swap;
     swap(lhs.ravel_, rhs.ravel_);
     swap(lhs.storage_, rhs.storage_);
@@ -588,19 +587,18 @@ class Array {
   View<const T, ND> view() const & noexcept { return View<const T, ND>{storage_.data(), ravel_}; }
 
   // not shure it should be here
-  template<typename U>
-  cast_t<U> cast() const {
-    cast_t<U> arr{shape(), storage_.template cast_clone<U>()};
-    auto item = this->data();
-    auto item_arr = arr.data();
-    for (uint n = 0, N = numel(); n < N; ++n, ++item, ++item_arr) {
-      *item_arr = xmat::cast<U>(*item);
-    }
-    return arr;
-  }
+  // template<typename U>
+  // cast_t<U> cast() const {
+  //   cast_t<U> arr{shape(), storage_.template cast_clone<U>()};
+  //   auto item = this->data();
+  //   auto item_arr = arr.data();
+  //   for (uint n = 0, N = numel(); n < N; ++n, ++item, ++item_arr) {
+  //     *item_arr = xmat::cast<U>(*item);
+  //   }
+  //   return arr;
+  // }
 
   // element access
-  // --------------
   T& at(const index_t& ii) noexcept { return storage_.data()[ravel_.at(ii)]; }
 
   const T& at(const index_t& ii) const noexcept { return storage_.data()[ravel_.at(ii)]; }
@@ -626,18 +624,19 @@ class Array {
   /*const T&*/ operator()(Args ... args) const noexcept { return at(args...); }
 
 
-  void fill(T a) {std::fill_n(data(), numel(), a); }
+  NArray_& fill(T a) {std::fill_n(data(), numel(), a); return *this;}
 
-  void fill(T start, const T delta) {
+  NArray_& fill(T start, const T delta) {
     // for(auto& item : storage_) {
     for (T* item = data(), *end = data() + ravel_.numel(); item != end; ++item) {
       *item = start;
       start += delta;
     }
+    return *this;
   }
 
-  void arange() { fill(T{0}, T{1}); }
-  void enumerate() { arange(); }
+  NArray_& arange() { fill(T{0}, T{1}); return *this; }
+  NArray_& enumerate() { arange(); return *this; }
 
   // access
   T* data() noexcept { return storage_.data(); }
@@ -660,21 +659,17 @@ class Array {
 };
 
 
-// array - make functions
-// ----------------------
-template<typename T, szt ND, typename U>
-Array<T, ND, arstor_dyn<T>>
-array_dynamic(const U(&ii)[ND]) {
-  Index<ND> idx{std::begin(ii), ND};
-  return Array<T, ND, arstor_dyn<T>>{idx};
-}
+// default global allocator: std::allocator
+template<typename T, size_t ND>
+using NArray = NArray_<T, ND, std::allocator<T>>;
 
-template<typename T, szt ... Args>
-Array<T, Shape<Args...>::ndim, arstor_static<T, Shape<Args...>::numel>>
-array_static() {
-  using shape_t = Shape<Args...>;
-  return Array<T, shape_t::ndim, arstor_static<T, shape_t::numel>>{shape_t::index()};
-}
+// global memory source
+template<typename T, size_t ND>
+using NAarrayGMS = NArray_<T, ND, GlobalMemAllocator<T>>;
+
+// specific memory source
+template<typename T, size_t ND>
+using NArrayMS = NArray_<T, ND, MemSourceAlloc<T>>;
 
 
 // print functions
@@ -695,7 +690,7 @@ template<typename T>
 struct PrintView <T, 1> {
   static const szt ND = 1;
   static void print_(std::ostream& os, View<T, ND> x, szt space) {
-    for (uint i = 0, N0 = x.shape()[0]; i < N0; ++i) {
+    for (size_t i = 0, N0 = x.shape()[0]; i < N0; ++i) {
         if (space) os << std::setw(space);
       os << x.at(i) << ", ";
     }
@@ -707,8 +702,8 @@ template<typename T>
 struct PrintView <T, 2> {
   static const szt ND = 2;
   static void print_(std::ostream& os, View<T, ND> x, szt space) {
-    for (uint i0 = 0, N0 = x.shape()[0]; i0 < N0; ++i0) {
-      for (uint i1 = 0, N1 = x.shape()[1]; i1 < N1; ++i1) {
+    for (size_t i0 = 0, N0 = x.shape()[0]; i0 < N0; ++i0) {
+      for (size_t i1 = 0, N1 = x.shape()[1]; i1 < N1; ++i1) {
         if (space) os << std::setw(space);
       os << x.at(i0, i1) << ", ";
     }
@@ -725,7 +720,7 @@ std::ostream& print(std::ostream& os, View<T, ND> x, szt space=4) {
 }
 
 template<typename T, szt ND, class S>
-std::ostream& print(std::ostream& os, const Array<T, ND, S>& x, szt space=4) {
+std::ostream& print(std::ostream& os, const NArray_<T, ND, S>& x, szt space=4) {
   os << "array" << ND << "d\n";
   PrintView<const T, ND>::print_(os, x.view(), space);
   return  os;
@@ -737,7 +732,7 @@ std::ostream& operator<<(std::ostream& os, View<T, ND> x) {
 }
 
 template<typename T, szt ND, class S>
-std::ostream& operator<<(std::ostream& os, const Array<T, ND, S>& x) {
+std::ostream& operator<<(std::ostream& os, const NArray_<T, ND, S>& x) {
   return print(os, x, 4);
 }
 } // namespace xmat

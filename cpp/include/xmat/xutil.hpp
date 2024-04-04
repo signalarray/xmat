@@ -11,13 +11,14 @@
 
 namespace xmat {
 
-using uint = std::size_t;
+// using uint = std::size_t;
 using szt = std::size_t;
 using ptdt = std::ptrdiff_t;
 
 
-template<uint N>
-uint assign(std::array<char, N>& dest, const char* src) {
+// TODO - change this. looks not good.
+template<size_t N>
+size_t assign(std::array<char, N>& dest, const char* src) {
   assert(true);
   auto n = std::strlen(src) + 1;
   if (n > N) { throw std::overflow_error("cxx::assing()"); }
@@ -29,15 +30,15 @@ uint assign(std::array<char, N>& dest, const char* src) {
 // ----------------------------
 // string view
 // ----------------------------
-struct sview {
-  sview(const char* s) : ptr{s}, size_{std::strlen(s)} {}
-  sview(const std::string& s) : ptr{s.c_str()}, size_{s.size()} {}
+struct Strv {
+  Strv(const char* s) : ptr{s}, size_{std::strlen(s)} {}
+  Strv(const std::string& s) : ptr{s.c_str()}, size_{s.size()} {}
   operator const char*() { return ptr; }
 
-  std::size_t size() { return size_; }
+  size_t size() { return size_; }
   
   const char* ptr = nullptr;
-  std::size_t size_ = 0;
+  size_t size_ = 0;
 };
 
 
@@ -77,14 +78,16 @@ inline bool is_aligned(const void* ptr) noexcept {
 // xmat::memsource<void> msint{128};
 // int* ptr0 = msing.allocate<int, 16>(4);   // with alignment
 // float* ptr1 = msing.allocate<float>(8);   // without alignment
-class memsource {
+class MemSource {
  public:
   using value_type = void;
 
-  memsource() = default;
-  memsource(char* buf, size_t n) { init(buf, n); }
-  memsource(const memsource&) = delete;
-  memsource& operator=(const memsource&) = delete;
+  MemSource() = default;
+  MemSource(char* buf, size_t n) { init(buf, n); }
+  // memsource(const memsource&) = default;
+  // memsource& operator=(const memsource&) = default;
+  MemSource(MemSource&&) = default;
+  MemSource& operator=(MemSource&&) = default;
 
   // reserve
   void* reserve(size_t nmin, size_t nmax, size_t* nout, std::nothrow_t) noexcept {
@@ -123,7 +126,7 @@ class memsource {
   template<typename T, size_t Aln>
   T* allocate(size_t n, std::nothrow_t) noexcept {
     // as many checks as possible: because not clear when will it be used.
-    // for ariерmetic types for calculations it should be like bellow.
+    // for ariерhetic types for calculations it should be like bellow.
     static_assert(Aln >= alignof(T), "Aln less than alignof(T)");
     static_assert(Aln % alignof(T) == 0, "Aln isn't multiple to alignof(T)");
     static_assert(Aln % sizeof(T) == 0, "Aln isn't multiple to sizeof(T)");
@@ -171,7 +174,6 @@ class memsource {
   }
 
   // not noexcept functions ----------------------------
-  //
   void* reserve(size_t nmin, size_t nmax, size_t* nout) {
     void* out = reserve(nmin, nmax, nout, std::nothrow);
     if (!out) throw std::bad_alloc();
@@ -270,17 +272,53 @@ class memsource {
   char* p_prev_ = nullptr;  // pointer for last section
 };
 
+template<typename T, typename Enable = void> struct MemSourceAlloc { };
+
+// for T = 8 bit size type
+template<typename T>
+struct MemSourceAlloc <T, std::enable_if_t<sizeof(T) == sizeof(char)>> {
+  using source_t = MemSource;
+  MemSourceAlloc(MemSource& memsrc) : impl{&memsrc} {}
+  MemSourceAlloc(MemSource* memsrc) : impl{memsrc} {}
+  T* allocate(size_t n) { return impl->template allocate<T>(n); }
+  void deallocate(T* p, size_t n) noexcept { impl->deallocate(p, n); }
+
+  // additional
+  size_t space() const noexcept { return impl->space(); }
+
+  void* extend_reserve(void* ptr, size_t nmin, size_t nmax, size_t* nout, std::nothrow_t nth) noexcept {
+    return impl->extend_reserve(ptr, nmin, nmax, nout, nth);
+  }
+
+  void* reserve(size_t nmin, size_t nmax, size_t* nout, std::nothrow_t nth) noexcept {
+    return impl->reserve(nmin, nmax, nout, nth);
+  }
+
+  mutable MemSource* impl = nullptr;
+};
+
+// for T = 8+ bit size type
+template<typename T>
+struct MemSourceAlloc <T, std::enable_if_t<(sizeof(T) > sizeof(char))>> {
+  using source_t = MemSource;
+  MemSourceAlloc(MemSource& memsrc) : impl{&memsrc} {}
+  MemSourceAlloc(MemSource* memsrc) : impl{memsrc} {}
+  T* allocate(size_t n) { return impl->template allocate<T>(n); }
+  void deallocate(T* p, size_t n) noexcept { impl->deallocate(p, n); }
+
+  mutable MemSource* impl = nullptr;
+};
 
 // for global allocator
 // --------------------
-struct glob_memsource {
-  using memsource_t = memsource;
-  static memsource& get() {
-    static memsource s;
+struct GlobalMemSource {
+  using memsource_t = MemSource;
+  static MemSource& get() {
+    static MemSource s;
     return s;
   }
 
-  static memsource& reset(size_t n) {
+  static MemSource& reset(size_t n) {
     static std::unique_ptr<char[]> uptr;
     uptr.reset(new char[n]);
     get().init(uptr.get(), n);
@@ -290,41 +328,41 @@ struct glob_memsource {
 
 
 // empty memsource will no allocate anything. can be used as default initializer.
-struct glob_memsource_null {
-  using memsource_t = memsource;
-  static memsource& get() {
-    static memsource s;
+struct GlobalMemSourceNull {
+  using memsource_t = MemSource;
+  static MemSource& get() {
+    static MemSource s;
     return s;
   }
 };
 
 
-template<typename T, class Arena = glob_memsource>
-class glob_memallocator {
+template<typename T, class Arena = GlobalMemSource>
+class GlobalMemAllocator {
  public:
   using value_type = T;
   using arena_t = Arena;
   using source_t = typename Arena::memsource_t;
 
-  glob_memallocator() = default;
+  GlobalMemAllocator() = default;
   
   template<typename U> 
-  constexpr glob_memallocator(const glob_memallocator<U>&) noexcept {}
+  constexpr GlobalMemAllocator(const GlobalMemAllocator<U>&) noexcept {}
   
   T* allocate(size_t n) { return source().template allocate<T>(n); }
 
-  template<size_t Aln> 
+  template<size_t Aln>
   T* allocate(size_t n) { return source().template allocate_aln<T, Aln>(n); }
 
   void deallocate(T* p, size_t n) noexcept {}
 
-  static source_t& source() { return glob_memsource::get(); }  // the same for all instancess
+  static source_t& source() { return GlobalMemSource::get(); }  // the same for all instancess
 };
 
 
 template<class T, class U, class A>
-bool operator==(const glob_memallocator<T, A>&, const glob_memallocator<U, A>&) { return true; }
+bool operator==(const GlobalMemAllocator<T, A>&, const GlobalMemAllocator<U, A>&) { return true; }
  
 template<class T, class U, class A>
-bool operator!=(const glob_memallocator<T, A>&, const glob_memallocator<U, A>&) { return false; }
+bool operator!=(const GlobalMemAllocator<T, A>&, const GlobalMemAllocator<U, A>&) { return false; }
 } // namespace xmat

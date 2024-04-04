@@ -220,86 +220,6 @@ int sample_2() {
   return 1;
 }
 
-int sample_3() {
-  print(__PRETTY_FUNCTION__, 1);
-
-  print("Array creation, copy, assign", 0, '-');
-
-  xmat::Array<int, 2> a00({3, 4});
-  xmat::Array<int, 2> a0({2, 3});
-  a0.fill(0, 1);
-  a00.fill(0, 1);
-  xmat::print(*kOutStream, a0);
-  xmat::print(*kOutStream, a00);
-
-  print(1, "copy constructor:", 0, '-');
-  xmat::Array<int, 2> a1 = a0;
-  xmat::print(*kOutStream, a1);
-
-  print(1, "copy assignment:", 0, '-');
-  xmat::print(*kOutStream, a1);
-  a1 = a00;
-  xmat::print(*kOutStream, a1);
-
-  print(1, "move constructor:", 0, '-');
-  xmat::Array<int, 2> a2(std::move(a0));
-  xmat::print(*kOutStream, a2);
-  printv(a0.shape());
-  printv(a0.numel());
-  printv(a0.storage_.size());
-
-  print(1, "move assignment:", 0, '-');
-  a2.at(1, 1) = 11;
-  a1 = std::move(a2);
-  xmat::print(*kOutStream, a1);
-  printv(a2.shape());
-  printv(a2.numel());
-  printv(a2.storage_.size());
-  
-  print(1, "swap:", 0, '-');
-  xmat::print(*kOutStream, a1);
-  xmat::print(*kOutStream, a00);
-  std::swap(a1, a00);
-  xmat::print(*kOutStream, a1);
-  xmat::print(*kOutStream, a00);
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
-int sample_4() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("Array on stack ", 0, '-');
-
-  print(1, "make manually", 0, '-');
-  xmat::Array<int, 2, xmat::arstor_static<int, 16>> a0{{2, 3}};
-  a0.fill(0, 1);
-  xmat::print(*kOutStream, a0);
-
-  print(1, "make manually", 0, '-');
-  xmat::Shape<2, 4> sh0;
-  xmat::Array<int, sh0.ndim, xmat::arstor_static<int, sh0.numel>> a1{sh0.index()};
-  a1.fill(10, 1);
-  xmat::print(*kOutStream, a1);
-
-  print(1, "xmat::array_dynamic<>:", 0, '-');
-  int n0 = sum(1, 1);
-  auto a3 = xmat::array_dynamic<int>({n0, 3});
-  a3.fill(0, 1);
-  xmat::print(*kOutStream, a3);
-  printv(a3.storage_tag());
-
-  print(1, "xmat::array_static<>:", 0, '-');
-  auto a4 = xmat::array_static<int, 3, 2>();
-  a4.fill(0, 1);
-  a4.at(2, 1) = -1;
-  xmat::print(*kOutStream, a4);
-  printv(a4.storage_tag());
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
 
 int sample_5() {
   print(__PRETTY_FUNCTION__, 1);
@@ -314,7 +234,7 @@ int sample_5() {
   printv(xmat::conv(a1, 2, 0, 0));
 
   print(1, "indexing", 0, '-');
-  xmat::Array<int, 4> ar1{{2, 3, 4, 5}};
+  xmat::NArray<int, 4> ar1{{2, 3, 4, 5}};
   printv(ar1.at({1, 2, 3}));
   printv(ar1.at({1, 0, 0}));
   ar1.at({1, 2, 3}) = 1;
@@ -334,7 +254,7 @@ int sample_6() {
   print("Slice", 0, '-');
 
   print(1, "Array", 0, '-');
-  xmat::Array<int, 2> a0{{4, 5}};
+  xmat::NArray<int, 2> a0{{4, 5}};
   a0.fill(0, 1);
   a0.at({0, 1}) = -1;
   a0.at(2, 1) = -2;
@@ -372,7 +292,7 @@ int sample_7() {
   print("View:", 0, '-');
 
   print(1, "Array", 0, '-');
-  xmat::Array<int, 2> a0{{4, 5}};
+  xmat::NArray<int, 2> a0{{4, 5}};
   a0.fill(0, 1);
   printv(a0);
 
@@ -416,7 +336,7 @@ int sample_8() {
   print("Iterators and assignment", 0, '-');
 
   print(1, "Array", 0, '-');
-  xmat::Array<int, 2> a0{{4, 5}};
+  xmat::NArray<int, 2> a0{{4, 5}};
   a0.fill(0, 1);
   auto v0 = a0.view();
   printv(v0);
@@ -446,37 +366,140 @@ int sample_8() {
 
 int sample_9() {
   print(__PRETTY_FUNCTION__, 1);
-  print("array<T, arstor_ms<T>>", 0, '-');
+  print("array_storage_ms<std::allocator>: ctor, copy, move, assignment", 0, '-');
   
-  print("Array creation, copy, assign", 0, '-');
-  auto gmemsrc = &xmat::glob_memsource::reset(1024);
-  xmat::Array<int, 2, xmat::arstor_ms<int>> a0({3, 4}, gmemsrc);
-  a0.enumerate();
-  printvl(a0);
+  auto gmemsrs = &xmat::GlobalMemSource::reset(1 << 10);
 
-  print(1, "array<T, arstor_ms<T>>.copy_ctor", 0, '-');
-  xmat::Array<int, 2, xmat::arstor_ms<int>> a1(a0);
-  a1(1, 1) = -11;
-  printvl(a1);
+  // using use_allocator = std::allocator<int>;
+  using use_allocator = xmat::GlobalMemAllocator<int>;
 
-  print(1, "array<T, arstor_ms<T>>.copy_assignment", 0, '-');
-  xmat::Array<int, 2, xmat::arstor_ms<int>> a2({3, 6}, gmemsrc);
-  a2.enumerate();
-  printvl(a2);
-  printvl(a1 = a2);
+  print(1, "std::allocator<> or xmat::global_memallocator<>", 0, '-');
+  print(1, "constructor", 0, '-');
+  xmat::NArrayStorageMS<int, use_allocator> as00{};
+  as00.init(16);
+  as00.data_[0] = -1;
+  printv(as00.N_);
+  printv(as00.data_[0]);
 
-  print(1, "array<T, arstor_ms<T>>.move_copy", 0, '-');
-  xmat::Array<int, 2, xmat::arstor_ms<int>> a3(std::move(a2));
-  printvl(a2);
-  printvl(a3);
-  printv(a2.shape());
-  printv(a3.shape());
+  print(1, "copy ctr", 0, '-');
+  xmat::NArrayStorageMS<int, use_allocator> as01{as00};
+  printv(as01.data_[0]);
+  as01.data_[0] = 11;
+  printv(as01.data_[0]);
+  printv(as01.N_);
+  
+  print(1, "assign", 0, '-');
+  as00 = as01;
+  printv(as00.N_);
+  printv(as00.data_[0]);
 
-  print(1, "array<T, arstor_ms<T>>.move_assignment", 0, '-');
-  printvl(a0 = std::move(a3));
-  printvl(a3);
-  printv(a0.shape());
-  printv(a3.shape());
+  print(1, "move ctr", 0, '-');
+  xmat::NArrayStorageMS<int, use_allocator> as02{std::move(as00)};
+  printv(as02.data_[0]);
+  printv(as02.N_);
+  printv(as00.N_);
+  
+  print(1, "move assign", 0, '-');
+  as01.data_[0] = 222;
+  printv(as01.data_[0]);
+  printv(as02.data_[0]);
+  as01 = std::move(as02);
+  printv(as01.N_);
+  printv(as02.N_);
+  printv(as01.data_[0]);
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
+
+int sample_10() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("array_storage_ms<std::allocator>: ctor, copy, move, assignment", 0, '-');
+  
+  auto gmemsrs = &xmat::GlobalMemSource::reset(1 << 10);
+  using use_allocator = xmat::MemSourceAlloc<int>;
+
+  print(1, "std::allocator<>", 0, '-');
+  print(1, "constructor", 0, '-');
+  xmat::NArrayStorageMS<int, use_allocator> as00{gmemsrs};
+  as00.init(16);
+  as00.data_[0] = -1;
+  printv(as00.N_);
+  printv(as00.data_[0]);
+
+  print(1, "copy ctr", 0, '-');
+  xmat::NArrayStorageMS<int, use_allocator> as01{as00};
+  printv(as01.data_[0]);
+  as01.data_[0] = 11;
+  printv(as01.data_[0]);
+  printv(as01.N_);
+  
+  print(1, "assign", 0, '-');
+  as00 = as01;
+  printv(as00.N_);
+  printv(as00.data_[0]);
+
+  print(1, "move ctr", 0, '-');
+  xmat::NArrayStorageMS<int, use_allocator> as02{std::move(as00)};
+  printv(as02.data_[0]);
+  printv(as02.N_);
+  printv(as00.N_);
+  
+  print(1, "move assign", 0, '-');
+  as01.data_[0] = 222;
+  printv(as01.data_[0]);
+  printv(as02.data_[0]);
+  as01 = std::move(as02);
+  printv(as01.N_);
+  printv(as02.N_);
+  printv(as01.data_[0]);
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
+
+int sample_11() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("ArrayMS", 0, '-');
+
+  auto gmemsrc = &xmat::GlobalMemSource::reset(1 << 10);
+
+  print(1, "xmat::array_storage_ms (with explicit storage argument)", 0, '-');
+  xmat::NArrayStorageMS<int, std::allocator<int>> 
+  stor0{std::allocator<int>{}};
+
+  xmat::NArrayStorageMS<int, xmat::GlobalMemAllocator<int>> 
+  stor1{xmat::GlobalMemAllocator<int>{}};
+
+  xmat::NArrayStorageMS<int, xmat::MemSourceAlloc<int>> 
+  stor2{xmat::MemSourceAlloc<int>{gmemsrc}};
+
+  print(1, "xmat::array_storage (with default storage constructor)", 0, '-');
+  xmat::NArrayStorageMS<int, std::allocator<int>> stor10{};
+  xmat::NArrayStorageMS<int, xmat::GlobalMemAllocator<int>> stor11{};
+
+  print(1, "xmat::ArrayMS (with explicit storage constructor)", 0, '-');
+  xmat::NArray_<int, 2, std::allocator<int>> a0{std::allocator<int>{}};
+  xmat::NArray_<int, 2, xmat::GlobalMemAllocator<int>> a1{xmat::GlobalMemAllocator<int>{}};
+  xmat::NArray_<int, 2, xmat::MemSourceAlloc<int>> a2{xmat::MemSourceAlloc<int>{gmemsrc}};
+  xmat::NArray_<int, 2, xmat::MemSourceAlloc<int>> a3{gmemsrc};
+  
+  print(1, "xmat::Array (with default storage constructor)", 0, '-');
+  xmat::NArray_<int, 2, std::allocator<int>> b0{};
+  xmat::NArray_<int, 2, xmat::GlobalMemAllocator<int>> b1{};
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
+
+int sample_12() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("View manipulations", 0, '-');
+
+  xmat::NArray<int, 2> a0{{2, 4}};
+  auto va0 = a0.view();
+  size_t n = va0.contigous();
+  printv(n);
 
   print(1, "FINISH", 1, '=');
   return 1;
@@ -486,7 +509,7 @@ int sample_9() {
 
 int main() {
   print("START: " __FILE__, 0, '=');
-  sample_9();
+  sample_12();
   print("END: " __FILE__, 0, '=');
   return EXIT_SUCCESS;
 }

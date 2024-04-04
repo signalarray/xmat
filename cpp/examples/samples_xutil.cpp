@@ -33,7 +33,7 @@ int sample_1() {
 
   const size_t mem_n = 128;
   std::unique_ptr<char[]> buf{new char[mem_n]};
-  xmat::memsource mem_mgr{buf.get(), mem_n};
+  xmat::MemSource mem_mgr{buf.get(), mem_n};
 
   print(1, "allocate bytes", 0, '-');
   printv(mem_mgr.used());
@@ -79,9 +79,9 @@ int sample_2() {
   print(__PRETTY_FUNCTION__, 1);
   print("COMMENT", 0, '-');
 
-  auto& memsrc = xmat::glob_memsource::reset(128);
+  auto& memsrc = xmat::GlobalMemSource::reset(128);
 
-  xmat::glob_memallocator<int> alc_int;
+  xmat::GlobalMemAllocator<int> alc_int;
   auto p0 = alc_int.allocate(1);
   printv(memsrc.used());
   auto p1 = alc_int.allocate(2);
@@ -97,10 +97,10 @@ int sample_3() {
   print("sample from other object file: `samples_xutil_link.cpp`", 0, '-');
 
   print(1, "init membuffer in `samples_xutil`", 0, '-');
-  auto& memsrc = xmat::glob_memsource::reset(128);
+  auto& memsrc = xmat::GlobalMemSource::reset(128);
 
   print(1, "use allocator in root", 0, '-');
-  xmat::glob_memallocator<int> alc_int;
+  xmat::GlobalMemAllocator<int> alc_int;
   auto p0 = alc_int.allocate(1);
   printv(memsrc.used());
   auto p1 = alc_int.allocate(2);
@@ -110,7 +110,7 @@ int sample_3() {
   samples_xutil_link_0();
 
   print(1, "again call in root", 0, '-');
-  xmat::glob_memallocator<double> alc_db;
+  xmat::GlobalMemAllocator<double> alc_db;
   auto d0 = alc_db.allocate(1);
   printv(memsrc.used());
   auto d1 = alc_db.allocate(2);
@@ -126,15 +126,15 @@ int sample_4() {
   print("memallocator with std::vector, std::map", 0, '-');
 
   print(1, "std::vector<int, xmat::memallocator<int>>", 0, '-');
-  auto& memsrc = xmat::glob_memsource::reset(128);
-  std::vector<int, xmat::glob_memallocator<int>> v0;
+  auto& memsrc = xmat::GlobalMemSource::reset(128);
+  std::vector<int, xmat::GlobalMemAllocator<int>> v0;
   printv(memsrc.used());
   v0.resize(4);
   printv(memsrc.used());
   v0.resize(8);
   printv(memsrc.used());
 
-  std::vector<int, xmat::glob_memallocator<int>> v1 = {11, 22};
+  std::vector<int, xmat::GlobalMemAllocator<int>> v1 = {11, 22};
   v0[0] = 10;
   printv(v0[0]);
   printv(memsrc.used());
@@ -152,10 +152,10 @@ int sample_4() {
 
 int sample_5() {
   print(__PRETTY_FUNCTION__, 1);
-  print("memsourcre", 0, '-');
+  print("memsource", 0, '-');
 
   char buf[128];
-  xmat::memsource ms{buf, sizeof(buf)};
+  xmat::MemSource ms{buf, sizeof(buf)};
   auto p0 = ms.allocate(3);
   printv(ms.used());
 
@@ -163,8 +163,6 @@ int sample_5() {
     printv(n);
     p0 = ms.extend(p0, 4 + n);
   }
-
-
 
   print(1, "FINISH", 1, '=');
   return 1;

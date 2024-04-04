@@ -28,15 +28,15 @@ namespace {
     print("write xmat::Array<T> to file.xmat", 1);
 
     using type_0 = double;
-    xmat::Array<type_0, 1> x0{{1}};
+    xmat::NArray<type_0, 1> x0{{1}};
     x0(0) = 10.0 + 1.0/3.0;
-    xmat::Array<type_0, 1> x1{{3}};
+    xmat::NArray<type_0, 1> x1{{3}};
     x1.enumerate();
-    xmat::Array<type_0, 2> x2{{3, 4}};
+    xmat::NArray<type_0, 2> x2{{3, 4}};
     x2.enumerate();
-    xmat::Array<type_0, 3> x3{{3, 4, 5}};
+    xmat::NArray<type_0, 3> x3{{3, 4, 5}};
     x3.enumerate();
-    xmat::Array<type_0, 4> x4{{3, 4, 5, 6}};
+    xmat::NArray<type_0, 4> x4{{3, 4, 5, 6}};
     x4.enumerate();
 
     xmat::Output xout{xmat::StreamFileOut{file_output}};
