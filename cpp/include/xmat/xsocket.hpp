@@ -80,12 +80,15 @@ void *get_in_addr(struct sockaddr *sa)
 class Socket {
  public:
 
-  enum class Mode {
-    server,
+  enum class Mode{
+    server = 0,
     connection,
     client,
-    undef
+    undef,
+    numel
   };
+
+  static constexpr const char* mode_name[static_cast<size_t>(Mode::numel)] = {"server", "connection", "client", "undef"};
 
   virtual ~Socket() { close(false); }
   Socket() = default;

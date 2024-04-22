@@ -13,73 +13,10 @@
 #include "common.hpp"
 
 
-// just while developint xarray.hpp
-// namespace xmat = xmat_new;
-
 std::ostream* kOutStream = &std::cout;
 
 namespace {
 
-// https://www.scs.stanford.edu/~dm/blog/param-pack.html
-// https://stackoverflow.com/questions/58598763/how-to-assign-variadic-template-arguments-to-stdarray
-// https://itecnote.com/tecnote/c-create-static-array-with-variadic-templates/
-// https://www.scs.stanford.edu/~dm/blog/param-pack.html
-int sum(int a, int b) { return a + b; }
-
-int foo(const int(&x)[4]) {
-  int a = 0;
-  for (int it : x) { a+= it; }
-  return a;
-}
-
-int foo0(std::initializer_list<int> ls) {
-  int a = 0;
-  for (int it : ls) { a+= it; }
-  return a;
-}
-
-int sub(int _0) { return 0; }
-int sub(int _0, int _1) { return 1; }
-int sub(int _0, int _1, int _2) { return 2; }
-
-template<typename ... Args>
-std::enable_if_t<(sizeof ... (Args)) <= 3, int>
-foo2(Args ... args) {
-  return sub(args ...);
-}
-
-template<typename ... Args>
-int foo3(Args ... args) {
-  int a1[] = {args ...};
-  return a1[1];
-}
-
-// --------------------------------------
-// compile time arrays
-// --------------------------------------
-template <typename T, std::size_t N>
-constexpr T cumprod(T const (&a)[N], std::size_t i = 0U) { 
-  return i < N ? (a[i] * cumprod(a, i+1U)) : T{1};
-}
-
-template<std::size_t ... Args>
-struct ShapeC {
-  static const std::size_t ndim = sizeof ... (Args);
-  static constexpr const std::size_t shape[] = {Args ...};
-  static const std::size_t numel = cumprod(shape);
-};
-
-
-template<std::size_t ND>
-struct ShapeR {
-  static const std::size_t ndim = ND;
-  
-  const std::size_t shape[ndim] = {};
-  const std::size_t numel = 0;
-};
-
-// samples
-// --------------------
 int sample_x() {
   print(__PRETTY_FUNCTION__, 1);
   print("COMMENT", 0, '-');
@@ -89,132 +26,188 @@ int sample_x() {
 }
 
 
-int sample_00() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("COMMENT", 0, '-');
-
-  ShapeC<2, 3, 4> sh0;
-  printv(sh0.ndim);
-  printv(sh0.shape[0]);
-  printv(sh0.shape[1]);
-  printv(sh0.shape[2]);
-  printv(sh0.numel);
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
 int sample_0() {
   print(__PRETTY_FUNCTION__, 1);
-  print("some trash: ", 0, '-');
+  print("Index<ND>", 0, '-');
+
+  print(1, "constructor: Index<ND>()", 0, '-');
+  const int k = 8;
+  xmat::Index<4> c[k];
+  for (int n = 0; n < k; ++n) {
+    printv(c[n]);
+  }
+
+  print(1, "constructor: Index_(...)", 0, '-');
+  xmat::Index<5> i00 = {1, 2};
+  xmat::Index<5> i01{4, 9, 1};
+  printv(i00);
+  i00 = {3, 4};
+  printv(i00);
+  i00 = i01;
+  printv(i00);
   
-  int x0 = 2, x1 = 3, x2 = 4;
-  int x3 = sum(x0, 1), x4 = sum(x1, 1), x5 = sum(x0, 1);
-
-  std::array<int, 3> a0 = {1, 2};
-  xmat::Index<3> a1{{1, 2}};
-  xmat::Index<3> a2{{11, 12, 13}};
-
-  int b0 = foo({1, 2, 3});
-  printv(b0);
-
-  int b1 = foo0({1, 2, 3, 10});
-  printv(b1);
-
-  int b2 = foo2(1);
-  printv(b2);
-  printv(foo2(1));
-  printv(foo2(1, 1));
-  printv(foo2(1, 1, 2));
-
-  int b3 = foo3(1, 2, 3);
-  printv(b3);
-  printv(foo3(1, 10, 3));
-  printv(foo3(1, 11, 3, 11));
-
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
 
 int sample_1() {
   print(__PRETTY_FUNCTION__, 1);
-  print("xmat::Index<ND> ", 0, '-');
+  print("Incrementor_<ND>", 0, '-');
 
-  print("index create", 0, '-');
-  xmat::Index<3> ii0 = {1, 2, 3};
-  xmat::Index<3> ii1 = ii0;
-  printv(ii0);
-  printv(ii1);
-  ii1[1] = 11;
-  ii0 = ii1;
-  printv(ii0);
-  printv(ii1);
-  ii0 = {3, 2, 1};
-  ii1 = {13, 12};
-  printv(ii0);
-  printv(ii1);
-  ii0.fill(0);
-  printv(ii1);
+  print(1, "constructor: Increment<ND>()", 0, '-');
+  xmat::IncrementC<4> inc0;
+  printv(inc0.shape);
+  printv(inc0.stride);
 
-  print("index make of std::array", 0, '-');
-  std::array<xmat::szt, 3> a0 = {33, 22, 11};
-  xmat::Index<3> ii1_0{a0};
-  xmat::Index<3> ii1_1 = a0;
+  xmat::IncrementC<4> inc1{{1, 2, 3, 4}};
+  printv(inc1.shape);
+  printv(inc1.stride);
+  
+  xmat::IncrementF<3> inc1_{{3, 4, 5}};
+  printv(inc1_.shape);
+  printv(inc1_.stride);
 
-  print("index props", 0, '-');
-  xmat::Index<4> ii2 = {2, 3, 4, 5};
-  xmat::Index<4> ii3 = {2, 3, 0, 0};
-  xmat::Index<4> ii4 = {2, 3, 0, 5};
+  print(1, "constructor: IncrementC<ND>()", 0, '-');
+  xmat::IncrementC<3> inc2{{3, 4, 5}};
+  for (int n = 0; n < 16; ++n, inc2.next()) {
+    *kOutStream << inc2.index << " : " << inc2.fidx << '\n';
+  }
 
-  printv(ii2.numel());
-  printv(ii3.numel());
-  printv(ii4.numel());
+  print(1, "constructor: IncrementF<ND>()", 0, '-');
+  xmat::IncrementF<3> inc3{{3, 4, 5}};
+  for (int n = 0; n < 30; ++n, inc3.next()) {
+    *kOutStream << inc3.index << " : " << inc3.fidx << '\n';
+  }
 
-  printv(ii2.top());
-  printv(ii3.top());
-  printv(ii4.top());
+  print(1, "Increment_<> overflow and comparition", 0, '-');
+  xmat::IncrementC<2> inc4{{2, 3}};
+  for (int n = 0; n < 30; ++n, inc4.next()) {
+    *kOutStream << inc4.index << " : " << inc4.fidx << '\n';
+  }
 
-  printv(ii2.topnumel());
-  printv(ii3.topnumel());
-  printv(ii4.topnumel());
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
 
-  printv(ii2.check());
-  printv(ii3.check());
-  printv(ii4.check());
+template<typename ... Args>
+bool check_if_index(Args ... args) { return xmat::AllType<int, Args ...>::value; }
+
+template<size_t N, typename ... Args>
+bool check_if_index_n(Args ... args) { return xmat::AllNType<N, int, Args...>::value; }
+
+int sample_2() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("Ravel_<ND>", 0, '-');
+
+  print(1, "constructor: hidx::conv<>", 0, '-');
+  const int N0 = 4;
+  int a0[N0] = {1, 2, 3, 4};
+  int a1[N0] = {1, 2, 3, 4};
+  printv(xmat::hidx::conv(a0, a1, N0, 0));
+  printv(xmat::hidx::rconv(a0, a1, N0, 0));
+  printv(xmat::hidx::conv<N0>(a0, a1, 0));
+  printv(xmat::hidx::rconv<N0>(a0, a1, 0));
+
+  print(1, "constructor: Increment<ND>()", 0, '-');
+  xmat::RavelF<3> rv0{{3, 4, 5}};
+  printv(rv0.shape);
+  printv(rv0.stride);
+
+  printv(rv0.at({1, 1, 1}));
+  printv(rv0.at({0, 1, 0}));
+  printv(rv0.unravel(5));
+  printv(rv0.unraveli(10));
+
+  print(1, "VArgs indexing", 0, '-');
+  printv(check_if_index(1, 2, 3, 4, 5));
+  printv(check_if_index(1, 2, 3, 4, "asd"));
+  printv(check_if_index_n<4>(1, 2, 3, 4));
+  printv(check_if_index_n<4>(1, 2, 3));
+  printv(check_if_index_n<4>(1, 2, 3, 4, 5));
+
+  printv(rv0.at(1, 1, 1));
+  printv(rv0.at(0, 1, 0));
 
   print(1, "FINISH", 1, '=');
   return 1;
 }
 
 
-int sample_2() {
+int sample_3() {
   print(__PRETTY_FUNCTION__, 1);
-  print("xmat.Ravel", 0, '-');
+  print("View<ND>, NArray", 0, '-');
 
-  xmat::Ravel<4> rv{{2, 3, 4, 5}};
-  printv(rv.shape);
-  printv(rv.stride);
-  rv.set_order(xmat::Order::F);
-  printv(rv.stride);
+  int buf[256] = {};
 
-  print("indexing order F", 0, '-');
-  printv(rv.at({1, 0, 0, 0}));
-  printv(rv.at({0, 1, 0, 0}));
-  printv(rv.at({0, 0, 1, 0}));
-  printv(rv.at({0, 0, 0, 1}));
-  printv(rv.at({0, 0, 0, 2}));
+  print(1, "View", 0, '-');
+  xmat::View<int, 2> v0{buf, {4, 6}};
+  auto fv = v0.fbegin();
+  for (int n = 0; n < 17; ++n, ++fv) {
+    *fv = n;
+  }
 
-  print("indexing order C", 0, '-');
-  rv.set_order(xmat::Order::C);
-  printv(rv.at({1, 0, 0, 0}));
-  printv(rv.at({0, 1, 0, 0}));
-  printv(rv.at({0, 0, 1, 0}));
-  printv(rv.at({0, 0, 0, 1}));
-  printv(rv.at({0, 0, 0, 2}));
+  xmat::print(*kOutStream, v0);
+  print(*kOutStream, v0);
+  printv(v0);
 
-  print(1, "indexing with args...", 0, '-');
-  printv(rv.at(1, 0, 0, 0));
-  printv(rv.at(0, 1, 0, 0));
+  int sha[] = {3, 4, 5};
+  int sta[] = {20, 5, 1};
+  int staf[] = {1, 3, 12};
+  auto a = xmat::hidx::ndcontigous<xmat::MOrder::C>(sha, sta, 3);
+  auto af = xmat::hidx::ndcontigous<xmat::MOrder::F>(sha, staf, 3);
+  printv(a);
+  printv(af);
+
+  print(1, "WIterator, wbegin()", 0, '-');
+  auto wit = v0.wbegin();
+  printv(wit.ndcontig_);
+  printv(wit.delta_);
+  printv(wit.length_);
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
+
+
+int sample_4() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("Slice", 0, '-');
+
+  int buf[256] = {};
+
+  print(1, "View", 0, '-');
+  xmat::View<int, 2> v0{buf, {4, 6}};
+  auto fv = v0.fbegin();
+  for (int n = 0; n < 17; ++n, ++fv) { *fv = n; }
+
+  print(1, "Slice", 0, '-');
+  xmat::Slice sl0;
+  
+  using sl = xmat::sl;
+  xmat::NSlice<2> sl0__{sl::all, sl::all};
+
+  auto vv0 = v0.view(sl0__);
+  //auto vv1 = v0.view<2>({sl::all, sl::all});
+
+  print(1, "isunique", 0, '-');
+  std::array<int, 4> u0 = {3,3,1,1};
+  printv(xmat::hidx::isunique(u0.begin(), u0.end()));
+  xmat::hidx::booblesort(u0.begin(), u0.end());
+  printv(u0);
+
+  print(1, "setdiff", 0, '-');
+  std::array<int, 8> sd0 = {1, 2, 3, 4, 5, 6, 7};
+  std::array<int, 4> sd1 = {4, 5, 10, 11};
+  std::array<int, 8> sd2 = {};
+
+  // auto out = xmat::hidx::setdiff(sd0.begin(), sd0.end(), sd1.begin(), sd1.end(), sd2.begin());
+  // auto out = xmat::hidx::setdiff(sd1.begin(), sd1.end(), sd0.begin(), sd0.end(), sd2.begin());
+  auto out = xmat::hidx::setdiff(sd0.begin(), sd0.end(), sd1.begin(), sd1.end(), sd0.begin());
+  printv(out - sd0.begin());
+  printv(sd0);
+  printv(sd1);
+  printv(sd2);
 
   print(1, "FINISH", 1, '=');
   return 1;
@@ -223,293 +216,98 @@ int sample_2() {
 
 int sample_5() {
   print(__PRETTY_FUNCTION__, 1);
-  print("Array indexing:", 0, '-');
+  print("ArrayAble::view()", 0, '-');
 
-  print(1, "xmat::conv:", 0, '-');
-  std::array<unsigned, 4> a1 = {10, 20, 30, 40};
-  printv(a1);
-  printv(xmat::conv(a1, 1, 0, 0));
-  printv(xmat::conv(a1, 0, 1, 0));
-  printv(xmat::conv(a1, 1, 0, 1));
-  printv(xmat::conv(a1, 2, 0, 0));
+  int buf[256] = {};
 
-  print(1, "indexing", 0, '-');
-  xmat::NArray<int, 4> ar1{{2, 3, 4, 5}};
-  printv(ar1.at({1, 2, 3}));
-  printv(ar1.at({1, 0, 0}));
-  ar1.at({1, 2, 3}) = 1;
-  ar1.at({1, 0, 0}) = 2;
-  printv(ar1.at(1, 2, 3, 0));
-  printv(ar1.at(1, 0, 0, 0));
+  print(1, "View", 0, '-');
+  xmat::View<int, 3> v3d0{buf, {3, 4, 5}};
+  printv(v3d0);
 
-  // xmat::print(*kOutStream, ar0, 4);
+  print(1, "View::view", 0, '-');
+  using xmat::sl;
+  using xmat::sl_;
+  auto vv2 = v3d0.view({sl::ilen(0, 1), sl::all, sl::all});
+  auto vv2_ = v3d0.view(sl_::ilen(0, 1), sl_::all(), sl_::all());
+  printv(vv2.shape());
+  printv(vv2.stride());
+
+  print(1, "View::keep", 0, '-');
+  auto kvv2 = vv2.keep<2>({1, 2});
+  printv(kvv2.shape());
+  printv(kvv2.stride());
   
+  print(1, "View::drop", 0, '-');
+  auto dvv2 = vv2.drop<1>({0});
+  printv(dvv2.shape());
+  printv(dvv2.stride());
+
+  print(1, "flat", 0, '-');
+  for (auto it = dvv2.fbegin(), end = dvv2.fend(); it != end; ++it) {
+    *it = 1;
+  }
+  printv(v3d0);
+
+  print(1, "walk", 0, '-');
+  for (auto it = dvv2.wbegin(), end = dvv2.wend(); it != end; ++it) {
+    for (auto& it_ : it) {
+      it_ = 3;
+    }
+  }
+  printv(v3d0);
+
+  print(1, "slice iteration 1d", 0, '-');
+  auto ibeg1d = dvv2.begin();
+  auto ibeg0d = ibeg1d.begin();
+  auto iend0d = ibeg1d.end();
+  int kk = 0;
+  for (auto it = ibeg1d.begin(), end = ibeg1d.end(); it != end; ++it) {
+    *it = -1;
+  }
+  printv(v3d0);
+
+  print(1, "slice iteration 1d", 0, '-');
+  int q = 100;
+  for (auto& it0 : v3d0) {
+    for (auto& it1 : it0) {
+      it1.at({0}) = ++q;
+    }
+  }
+  printv(v3d0);
+
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
 
 int sample_6() {
-  // https://www.learncpp.com/cpp-tutorial/stdarray-of-class-types-and-brace-elision/
   print(__PRETTY_FUNCTION__, 1);
-  print("Slice", 0, '-');
+  print("NArray", 0, '-');
 
-  print(1, "Array", 0, '-');
-  xmat::NArray<int, 2> a0{{4, 5}};
-  a0.fill(0, 1);
-  a0.at({0, 1}) = -1;
-  a0.at(2, 1) = -2;
-  xmat::print(*kOutStream, a0, 4);
+  const size_t NN = 1 << 8;
+  char buf[NN] = {};
+  xmat::MemorySource lms{buf, NN};
+  auto* gms = &xmat::MemorySourceGlobal::reset(NN);
 
-  print(1, "Slice[]", 0, '-');
-  std::array<xmat::Slice, 2> sl_0{{{2, 3, 1}, {1, 4, 1}}};
-  printv(sl_0);
+  xmat::NArray<int, 2> a00;
+  xmat::NArrayGMS<int, 2> a01;
+  xmat::NArrayMS<int, 2> a02{&lms};
 
-  print(1, "Ravel", 0, '-');
-  auto& rv0 = a0.ravel_;
-  xmat::Ravel<2> rv1 = rv0.slice(sl_0);
-  printv(rv1.origin);
-  printv(rv1.stride);
-  printv(rv1.at({0, 0}));
-  printv(rv1.at(0, 0));
-  printv(rv1.at(0, 1));
-  printv(rv1.at(0, 2));
+  xmat::NArray<int, 2> a10{{2, 3}};
+  xmat::NArrayGMS<int, 2> a11{{2, 3}};
+  xmat::NArrayMS<int, 2> a12{{2, 3}, &lms};
 
-  print(1, "slice_2", 0, '-');
-  std::array<xmat::Slice, 2> sl_1{{{1, 4}, {3, 4}}};
-  printv(sl_1);
-  xmat::Ravel<2> rv2 = rv0.slice(sl_1);
-  printv(rv2.at(0, 0));
-  printv(rv2.at(1, 0));
-  printv(rv2.at(2, 0));
+  xmat::NArray_<int, 2, xmat::AllocatorMSGlobal<int, 128>> a22{{2, 3}};
 
   print(1, "FINISH", 1, '=');
   return 1;
 }
-
-
-int sample_7() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("View:", 0, '-');
-
-  print(1, "Array", 0, '-');
-  xmat::NArray<int, 2> a0{{4, 5}};
-  a0.fill(0, 1);
-  printv(a0);
-
-  print(1, "Array.view", 0, '-');
-  auto v0 = a0.view();
-  printv(v0);
-  
-  print(1, "View.slice", 0, '-');
-  using xmat::Slice;
-  auto s0 = v0.slice({Slice{2, 3, 1}, Slice{1, 4, 1}});
-  printv(s0);
-
-  printv(v0.slice({{{1, 4}, {3, 4}}}));
-
-  print(1, "Ravel.reshape", 0, '-');
-  auto& rv0 = a0.ravel_;
-  // auto rv1 = rv0.reshape<1>({2, 10}); //??? why 2 elements for array1 length
-  auto rv1 = rv0.reshape<2>({2, 10});
-  printv(rv1.shape);
-  printv(rv1.stride);
-
-  print(1, "View.reshape", 0, '-');
-  auto v1 = v0.reshape<2>({2, 10});
-  printv(v1);
-
-  print(1, "View/Slice.squeese", 0, '-');
-  auto s0_1d = s0.squeese<1>();
-  printv(s0_1d);
-
-  auto s1 = v0.slice({{{1, 4}, {3, 4}}});
-  auto s1_1d = s1.squeese<1>();
-  printv(s1_1d);
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
-
-int sample_8() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("Iterators and assignment", 0, '-');
-
-  print(1, "Array", 0, '-');
-  xmat::NArray<int, 2> a0{{4, 5}};
-  a0.fill(0, 1);
-  auto v0 = a0.view();
-  printv(v0);
-
-  auto s0 = v0.slice({{{1, 3}, {3, 4}}});
-  auto s0_1d = s0.squeese<1>();
-  printv(s0_1d);
-
-  print(1, "test iterator<1D>", 0, '-');
-  auto it0 = s0_1d.begin();
-  auto end0 = s0_1d.end();
-  printv(s0_1d.numel());
-  printv(*end0);
-  for (int n = 0, N = s0_1d.numel(); n < N; ++n, ++it0) {
-    printv(*it0);
-    printv(it0 == end0);
-  }
-  printv(it0 == end0);
-  
-  print(1, "print", 0, '-');
-  printv(s0_1d);
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
-
-int sample_9() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("array_storage_ms<std::allocator>: ctor, copy, move, assignment", 0, '-');
-  
-  auto gmemsrs = &xmat::GlobalMemSource::reset(1 << 10);
-
-  // using use_allocator = std::allocator<int>;
-  using use_allocator = xmat::GlobalMemAllocator<int>;
-
-  print(1, "std::allocator<> or xmat::global_memallocator<>", 0, '-');
-  print(1, "constructor", 0, '-');
-  xmat::NArrayStorageMS<int, use_allocator> as00{};
-  as00.init(16);
-  as00.data_[0] = -1;
-  printv(as00.N_);
-  printv(as00.data_[0]);
-
-  print(1, "copy ctr", 0, '-');
-  xmat::NArrayStorageMS<int, use_allocator> as01{as00};
-  printv(as01.data_[0]);
-  as01.data_[0] = 11;
-  printv(as01.data_[0]);
-  printv(as01.N_);
-  
-  print(1, "assign", 0, '-');
-  as00 = as01;
-  printv(as00.N_);
-  printv(as00.data_[0]);
-
-  print(1, "move ctr", 0, '-');
-  xmat::NArrayStorageMS<int, use_allocator> as02{std::move(as00)};
-  printv(as02.data_[0]);
-  printv(as02.N_);
-  printv(as00.N_);
-  
-  print(1, "move assign", 0, '-');
-  as01.data_[0] = 222;
-  printv(as01.data_[0]);
-  printv(as02.data_[0]);
-  as01 = std::move(as02);
-  printv(as01.N_);
-  printv(as02.N_);
-  printv(as01.data_[0]);
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
-int sample_10() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("array_storage_ms<std::allocator>: ctor, copy, move, assignment", 0, '-');
-  
-  auto gmemsrs = &xmat::GlobalMemSource::reset(1 << 10);
-  using use_allocator = xmat::MemSourceAlloc<int>;
-
-  print(1, "std::allocator<>", 0, '-');
-  print(1, "constructor", 0, '-');
-  xmat::NArrayStorageMS<int, use_allocator> as00{gmemsrs};
-  as00.init(16);
-  as00.data_[0] = -1;
-  printv(as00.N_);
-  printv(as00.data_[0]);
-
-  print(1, "copy ctr", 0, '-');
-  xmat::NArrayStorageMS<int, use_allocator> as01{as00};
-  printv(as01.data_[0]);
-  as01.data_[0] = 11;
-  printv(as01.data_[0]);
-  printv(as01.N_);
-  
-  print(1, "assign", 0, '-');
-  as00 = as01;
-  printv(as00.N_);
-  printv(as00.data_[0]);
-
-  print(1, "move ctr", 0, '-');
-  xmat::NArrayStorageMS<int, use_allocator> as02{std::move(as00)};
-  printv(as02.data_[0]);
-  printv(as02.N_);
-  printv(as00.N_);
-  
-  print(1, "move assign", 0, '-');
-  as01.data_[0] = 222;
-  printv(as01.data_[0]);
-  printv(as02.data_[0]);
-  as01 = std::move(as02);
-  printv(as01.N_);
-  printv(as02.N_);
-  printv(as01.data_[0]);
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
-int sample_11() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("ArrayMS", 0, '-');
-
-  auto gmemsrc = &xmat::GlobalMemSource::reset(1 << 10);
-
-  print(1, "xmat::array_storage_ms (with explicit storage argument)", 0, '-');
-  xmat::NArrayStorageMS<int, std::allocator<int>> 
-  stor0{std::allocator<int>{}};
-
-  xmat::NArrayStorageMS<int, xmat::GlobalMemAllocator<int>> 
-  stor1{xmat::GlobalMemAllocator<int>{}};
-
-  xmat::NArrayStorageMS<int, xmat::MemSourceAlloc<int>> 
-  stor2{xmat::MemSourceAlloc<int>{gmemsrc}};
-
-  print(1, "xmat::array_storage (with default storage constructor)", 0, '-');
-  xmat::NArrayStorageMS<int, std::allocator<int>> stor10{};
-  xmat::NArrayStorageMS<int, xmat::GlobalMemAllocator<int>> stor11{};
-
-  print(1, "xmat::ArrayMS (with explicit storage constructor)", 0, '-');
-  xmat::NArray_<int, 2, std::allocator<int>> a0{std::allocator<int>{}};
-  xmat::NArray_<int, 2, xmat::GlobalMemAllocator<int>> a1{xmat::GlobalMemAllocator<int>{}};
-  xmat::NArray_<int, 2, xmat::MemSourceAlloc<int>> a2{xmat::MemSourceAlloc<int>{gmemsrc}};
-  xmat::NArray_<int, 2, xmat::MemSourceAlloc<int>> a3{gmemsrc};
-  
-  print(1, "xmat::Array (with default storage constructor)", 0, '-');
-  xmat::NArray_<int, 2, std::allocator<int>> b0{};
-  xmat::NArray_<int, 2, xmat::GlobalMemAllocator<int>> b1{};
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-
-int sample_12() {
-  print(__PRETTY_FUNCTION__, 1);
-  print("View manipulations", 0, '-');
-
-  xmat::NArray<int, 2> a0{{2, 4}};
-  auto va0 = a0.view();
-  size_t n = va0.contigous();
-  printv(n);
-
-  print(1, "FINISH", 1, '=');
-  return 1;
-}
-}
+} // namespace
 
 
 int main() {
   print("START: " __FILE__, 0, '=');
-  sample_12();
+  sample_6();
   print("END: " __FILE__, 0, '=');
   return EXIT_SUCCESS;
 }

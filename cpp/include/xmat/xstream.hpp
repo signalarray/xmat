@@ -15,6 +15,7 @@
 #include <new>
 
 #include "xutil.hpp"
+#include "xmemory.hpp"
 
 
 namespace xmat {
@@ -106,7 +107,7 @@ struct BBufStorage_ {
     size_t nout = 0;
     void* ptr = nullptr;
     ptr = memsource_.extend_reserve(data_, n, nn, &nout, std::nothrow);
-    
+
     if(!ptr) {
       ptr = memsource_.reserve(n, nn, &nout, std::nothrow);
       if (ptr) {
@@ -230,8 +231,11 @@ class OBBuf_ {
   void close() noexcept { is_open_ = false; }
 
   // access
-  MemSource get_memsource() noexcept { return MemSource{storage_.data(), storage_.size()}; }
+  // MemSource get_memsource() noexcept { return MemSource{data(), size()}; }
+  MemorySource get_memsource() noexcept { return {data(), size()}; }
 
+  const char* data() const { return storage_.data(); }
+  char* data() { return storage_.data(); }
   std::size_t size() const noexcept { return size_; }
   storage_t& storage() { return storage_; }
 
@@ -256,12 +260,19 @@ class IBBuf_ {
   IBBuf_(IBBuf_&&) = default;
   IBBuf_& operator=(IBBuf_&&) = default;
 
-  IBBuf_& push(const char* ptr, std::streamsize n) {
+  // content make methods
+  // --------------------
+  char* push_reserve(std::streamsize n) {
+    size_t size_old = size_;
     size_t size_new = size_ + n;
     storage_.size_request(size_new); // throw exception
     // ---- no exeption line
-    std::copy_n(ptr, n, storage_.data() + cursor_);
     size_ = size_new;
+    return storage_.data() + size_old;
+  }
+
+  IBBuf_& push(const char* ptr, std::streamsize n) {
+    std::copy_n(ptr, n, push_reserve(n));
     return *this;
   }
 
@@ -272,6 +283,7 @@ class IBBuf_ {
   }
 
   // like std:istream
+  // ----------------
   IBBuf_& read(char* ptr, std::streamsize n) {
     assert(cursor_ + n <= size_);
     std::copy_n(storage_.data() + cursor_, n, ptr);
@@ -293,12 +305,16 @@ class IBBuf_ {
     return *this;
   }
 
-  bool is_open() const noexcept { return is_open_ && storage_.ready(); }
+  bool is_open() const noexcept { return is_open_ && size() > 0; }
 
   void close() noexcept { is_open_ = false; }
 
   // access
-  size_t size() const noexcept { return size_; }
+  MemorySource get_memsource() noexcept { return {data(), size()}; }
+  
+  const char* data() const { return storage_.data(); }
+  char* data() { return storage_.data(); }
+  std::size_t size() const noexcept { return size_; }
   storage_t& storage() { return storage_; }
 
  public:
@@ -434,12 +450,12 @@ class StreamBlock {
   std::array<char, k_max_block_name_len> name_ = {};
   std::array<char, k_max_type_name_len> typename_ = {};
   shape_t shape_ = {0};
-  xsz_t numel_ = 0;
+  size_t numel_ = 0;
   xuint8_t typesize_ = 0;
   xuint8_t ndim_ = 0;
 
   const char* ptr_ = nullptr;
-  xuint8_t pos_ = 0;
+  size_t pos_ = 0;
 };
 
 
@@ -459,18 +475,23 @@ struct BugOut_ {
   ~BugOut_() { close(); }
 
   template<typename T, bool Enabled = Serializer<T>::enabled>
-  void setitem(Strv name, const T& x) {
-    StreamBlock block = Serializer<T>::dump(x);
-    write_block(name, block);
+  StreamBlock setitem(VString name, const T& x) { 
+    StreamBlock block;
+    assign(block.name_, name.ptr);
+    Serializer<T>::dump(block, x, obuf_);
+    return block;
   }
 
+  // not welcome for using
   template<typename T>
-  void setitem_n(Strv name, const T* x, size_t n) {
-    StreamBlock block = Serializer<T*>::dump_n(x, n);
-    write_block(name, block);
+  StreamBlock setitem_n(VString name, const T* x, size_t n) {
+    StreamBlock block;
+    assign(block.name_, name.ptr);
+    Serializer<T*>::dump_n(block, x, n, obuf_);
+    return block;
   }
 
-  StreamBlock write_block(Strv name, StreamBlock& block) {
+  StreamBlock write_block(VString name, StreamBlock& block) {
     if(!obuf_.is_open()) {
       throw XStreamError("xmat::bugout.write_block. attempt to write to a closed stream");
     }
@@ -492,7 +513,10 @@ struct BugOut_ {
 
   // access
   StreamHead& head() { return head_; }
+  const StreamHead& head() const { return head_; }
+
   buff_t& buf() { return obuf_; }
+  const buff_t& buf() const { return obuf_; }
 
  public:
   StreamHead head_;
@@ -508,9 +532,7 @@ struct BugIn_ {
   BugIn_() = default;
 
   BugIn_(IBuff&& buf) : ibuf_{std::move(buf)} { 
-    if (ibuf_.size() >= k_head_size){
-      scan_head(); 
-    } 
+    if (ibuf_.is_open()) { scan_head(); } 
   }
 
   ~BugIn_() { close(); }
@@ -552,24 +574,28 @@ struct BugIn_ {
     template<typename T> T get() {
       assert(!empty());
       if(empty()) throw XStreamError{"bugin.iterator.get<T>: access to empty block"};
+      ibuf->seekg(block.pos_ + k_block_size, std::ios_base::beg);
       return Serializer<T>::load(block, *ibuf);
     }
 
     template<typename T, typename Allocator> T get(Allocator&& alloc) {
       assert(!empty());
       if(empty()) throw XStreamError{"bugin.iterator.get<T>: access to empty block"};
+      ibuf->seekg(block.pos_ + k_block_size, std::ios_base::beg);
       return Serializer<T>::load_with_allocator(block, *ibuf, std::forward<Allocator>(alloc));
     }
 
     template<typename T> T& get_to(T& y) {
       assert(!empty());
       if(empty()) throw XStreamError{"bugin.iterator.get<T>: access to empty block"};
+      ibuf->seekg(block.pos_ + k_block_size, std::ios_base::beg);
       return Serializer<T>::load_to(block, *ibuf, y);
     }
 
     template<typename T> T* get_to(T* y) {
       assert(!empty());
       if(empty()) throw XStreamError{"bugin.iterator.get<T>: access to empty block"};
+      ibuf->seekg(block.pos_ + k_block_size, std::ios_base::beg);
       return Serializer<T*>::load_to(block, *ibuf, y);
     }
 
@@ -580,8 +606,8 @@ struct BugIn_ {
     const char* name()  const noexcept { return block.name_.data(); }
     const char* type_name() const noexcept { return block.typename_.data(); }
     StreamBlock::shape_t shape() const noexcept { return block.shape_; }
-    xsz_t shape(size_t nd) const noexcept { assert(nd < block.ndim_); return block.shape_[nd]; }
-    xsz_t numel() const noexcept { return block.numel_; }
+    size_t shape(size_t nd) const noexcept { assert(nd < block.ndim_); return block.shape_[nd]; }
+    size_t numel() const noexcept { return block.numel_; }
     xuint8_t type_size() const noexcept { return block.typesize_; }
     xuint8_t ndim() const noexcept { return block.ndim_; }
     const char* ptr() const noexcept { return block.ptr_; }
@@ -597,7 +623,7 @@ struct BugIn_ {
 
   Iterator end() { return Iterator{head_.total_size}; }
 
-  Iterator at(Strv name) {
+  Iterator at(VString name) {
     auto it = std::find_if(
       begin(),
       end(),
@@ -621,8 +647,12 @@ struct BugIn_ {
   }
 
   // access
+  bool empty() const noexcept { return head_.total_size; }
   StreamHead& head() { return head_; }
+  const StreamHead& head() const { return head_; }
+  
   buff_t& buf() { return ibuf_; }
+  const buff_t& buf() const { return ibuf_; }
 
  public:
   StreamHead head_;
@@ -632,13 +662,14 @@ struct BugIn_ {
 
 // aliases
 // -----------------------------------
+#if 0
 using OBBuf       = OBBuf_<bbuf_memsource_default>;      // default_constructable
-using OBBufGMS    = OBBuf_<GlobalMemAllocator<xbyte_t>>;  // default_constructable
-using OBBufMS     = OBBuf_<MemSourceAlloc<xbyte_t>>;       // non_default_constructable
+using OBBufGMS    = OBBuf_<GlobalMemAllocator<xbyte_t>>; // default_constructable
+using OBBufMS     = OBBuf_<MemSourceAlloc<xbyte_t>>;     // non_default_constructable
 
 using IBBuf       = IBBuf_<bbuf_memsource_default>;      // default_constructable
-using IBBufGMS    = IBBuf_<GlobalMemAllocator<xbyte_t>>;  // default_constructable
-using IBBufMS     = IBBuf_<MemSourceAlloc<xbyte_t>>;       // non_default_constructable
+using IBBufGMS    = IBBuf_<GlobalMemAllocator<xbyte_t>>; // default_constructable
+using IBBufMS     = IBBuf_<MemSourceAlloc<xbyte_t>>;     // non_default_constructable
 
 
 using BugOutFile  = BugOut_<std::ofstream>;              // non_default_constructable
@@ -650,5 +681,27 @@ using BugInFile   = BugIn_<std::ifstream>;               // non_default_construc
 using BugIn       = BugIn_<IBBuf>;                       // default_constructable
 using BugInGMS    = BugIn_<IBBufGMS>;                    // default_constructable
 using BugInMS     = BugIn_<IBBufMS>;                     // non_default_constructable
+#else
+
+using OBBuf       = OBBuf_<bbuf_memsource_default>;      // default_constructable
+using OBBufGMS    = OBBuf_<AllocatorMSGlobal<xbyte_t>>;     // default_constructable
+using OBBufMS     = OBBuf_<AllocatorMSRef<xbyte_t>>;     // non_default_constructable
+
+using IBBuf       = IBBuf_<bbuf_memsource_default>;      // default_constructable
+using IBBufGMS    = IBBuf_<AllocatorMSGlobal<xbyte_t>>; // default_constructable
+using IBBufMS     = IBBuf_<AllocatorMSRef<xbyte_t>>;     // non_default_constructable
+
+
+using BugOutFile  = BugOut_<std::ofstream>;              // non_default_constructable
+using BugOut      = BugOut_<OBBuf>;                      // default_constructable
+using BugOutGMS   = BugOut_<OBBufGMS>;                   // default_constructable
+using BugOutMS    = BugOut_<OBBufMS>;                    // non_default_constructable
+
+using BugInFile   = BugIn_<std::ifstream>;               // non_default_constructable
+using BugIn       = BugIn_<IBBuf>;                       // default_constructable
+using BugInGMS    = BugIn_<IBBufGMS>;                    // default_constructable
+using BugInMS     = BugIn_<IBBufMS>;                     // non_default_constructable
+#endif
+
 
 } // namespace xmat

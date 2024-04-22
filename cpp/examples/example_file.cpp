@@ -12,8 +12,7 @@
 #include <type_traits>
 
 #include "../include/xmat/xarray.hpp"
-#include "../include/xmat/xformat.hpp"
-#include "../include/xmat/xserialization.hpp"
+#include "../include/xmat/xserial.hpp"
 
 #include "common.hpp"
 #include "temp_data_folder.hpp"

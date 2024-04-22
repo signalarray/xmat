@@ -8,6 +8,7 @@
 #include "../include/xmat/xstream.hpp"
 #include "../include/xmat/xserial.hpp"
 
+
 std::ostream* kOutStream = &std::cout;
 
 namespace {
@@ -34,8 +35,8 @@ int sample_0() {
   }
 
   print(1, "bbuf_storage_memsource", 0, '-');
-  auto gmemsrc = &xmat::GlobalMemSource::reset(5);
-  xmat::BBufStorage_<xmat::MemSourceAlloc<xmat::xbyte_t>> bbms{gmemsrc};
+  auto gmemsrc = &xmat::MemorySourceGlobal::reset(5);
+  xmat::BBufStorage_<xmat::AllocatorMSRef<xmat::xbyte_t>> bbms{gmemsrc};
   for (int n = 0; n < 8; ++n) {
     print_mv("n :", n);
     bbms.size_request(n);
@@ -61,7 +62,7 @@ int sample_1() {
   printv(obb.storage_.data())
 
   print(1, "obbuf<bbuf_storage_ms>", 0, '-');
-  auto gmemsrc = &xmat::GlobalMemSource::reset(1 << 10);
+  auto gmemsrc = &xmat::MemorySourceGlobal::reset(1 << 10);
   xmat::OBBufMS obbms{gmemsrc};
 
   obbms.write(line1, sizeof(line1) - 1);
@@ -99,7 +100,7 @@ int sample_2() {
   h0.dump(obb);
 
   print(1, "xmat::ibbuf<memsource>", 0, '-');
-  xmat::MemSource obb_smem = obb.get_memsource();
+  auto obb_smem = obb.get_memsource();
   printv(obb_smem.size());
   xmat::IBBufMS ibb{&obb_smem};
   printv(ibb.size());
@@ -122,9 +123,7 @@ int sample_3() {
   print("xmat::bugout<>", 0, '-');
 
   print(1, "xmat::bugout_ms xout{gmemsrc}", 0, '-');
-  auto gmemsrc = &xmat::GlobalMemSource::reset(1 << 10);
-  // xmat::bugout_ms xout{gmemsrc};
-  // xmat::bugout_ms xout{{gmemsrc}};
+  auto gmemsrc = &xmat::MemorySourceGlobal::reset(1 << 10);
   xmat::BugOutMS xout{xmat::OBBufMS{gmemsrc}};
   xout.setitem("a0", 1);
   xout.setitem("a1", 2);
@@ -198,13 +197,21 @@ int sample_4() {
   xout.setitem("c0", std::vector<int>{11, 22, 33, 44, 55, 66});
   xout.setitem("c1", std::string{"string std string"});
   xout.setitem("c2", std::array<int, N>{1, 2, 3, 4, 5});
-
+ 
   print(1, "xmat Array", 0, '-');
-  auto d0 = xmat::NArray<int, 1>{{6}}.enumerate();
-  auto d1 = xmat::NArray<int, 2>{{2, 6}}.enumerate();
-
+  auto d0 = xmat::NArray<int, 1>{{6}};
+  auto d1 = xmat::NArray<int, 2>{{2, 6}};
   d0.enumerate();
   d1.enumerate();
+  d0.at(2) = -1;
+  d1.at(1, 3) = -21;
+  printv(d0);
+  printv(d1);
+  for (auto it = d0.wbegin(), end = d0.wend(); it != end; ++it) {
+    for (auto it_ : it) *kOutStream << it_ << ", ";
+  }
+  *kOutStream << "\n";
+
   xout.setitem("d0", d0);
   xout.setitem("d1", d1);
 
@@ -216,7 +223,10 @@ int sample_4() {
   auto xout_ms = xout.buf().get_memsource();
   xmat::BugInMS xin{std::move(xmat::IBBufMS{&xout_ms}.push_all())};
   printv(xin.head_.total_size);
-  for(auto& item : xin) { printv(item.name_); }
+  for(auto& item : xin) { 
+    printv(item.name_);
+    printv(item.pos_);
+  }
 
   print(1, "xin.get", 0, '-');
   print(1, "xin. scalar", 0, '-');
@@ -229,27 +239,26 @@ int sample_4() {
   printv(b0_);
 
   std::string b1_(N, 'x');
+  printv(b1_.c_str());
   xin.at("b1").get_to(&b1_[0]);
   printv(b1_.c_str());
 
   print(1, "xin. std", 0, '-');
   auto c0_ = xin.at("c0").get<std::vector<int>>();
   printv(c0_);
-
+  
   auto c1_ = xin.at("c1").get<std::string>();
   printv(c1_.c_str());
-
+  
   auto c2_ = xin.at("c2").get<std::array<int, N>>();
   printv(c2_);
 
   print(1, "xin. xmat::Array", 0, '-');
   auto d0_ = xin.at("d0").get<xmat::NArray<int, 1>>();
-  // auto d0_ = xin.at("d0").get<xmat::Array<int, 1, std::allocator<int>>>();
   printv(d0_);
 
-  // auto d1_ = xin.at("d1").get<xmat::array<int, 2>>();
-  // // auto d1_ = xin.at("d0").get<xmat::Array<int, 2, std::allocator<int>>>();
-  // printv(d1_);
+  auto d1_ = xin.at("d1").get<xmat::NArray<int, 2>>();
+  printv(d1_);
 
   print(1, "FINISH", 1, '=');
   return 1;
@@ -287,7 +296,7 @@ int sample_5() {
   printv(d1_);
   
   print(1, "xin. xmat::Array<xmat::memsource> ", 0, '-');
-  auto gmems = &xmat::GlobalMemSource::reset(1 << 10);
+  auto gmems = &xmat::MemorySourceGlobal::reset(1 << 10);
   auto d0_ms_ = xin.at("d0").get<xmat::NArrayMS<int, 1>>(gmems);
   printv(d0_ms_);
 
@@ -299,7 +308,7 @@ int sample_5() {
 
 int main() {
   print("START: " __FILE__, 0, '=');
-  sample_5();
+  sample_3();
   print("END: " __FILE__, 0, '=');
   return EXIT_SUCCESS;
 }
