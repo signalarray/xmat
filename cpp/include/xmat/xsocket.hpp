@@ -1,14 +1,20 @@
-/* 
-*/
-
 #pragma once
 
+#ifdef _WIN32
+#define XMAT_USE_WINSOCKET
+
+#undef UNICODE
+#define WIN32_LEAN_AND_MEAN
+
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 // linux
 #include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
 
-#define _XOPEN_SOURCE_EXTENDED 1     // https://www.ibm.com/docs/en/zos/2.4.0?topic=functions-recv-receive-data-socket#d386468e303
 #include <sys/socket.h>
 
 #include <sys/fcntl.h>
@@ -16,23 +22,16 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#endif
 
 // c-lang
 #include <cassert>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
+#include <cstdint>
 
 // cpp-lang
-#include <iostream>
-#include <string>
-#include <sstream>
-#include <array>
-#include <vector>
-#include <algorithm>
-#include <exception>
-#include <chrono>
-#include <thread>
+
 
 
 // project
@@ -41,16 +40,126 @@
 
 namespace xmat {
 
-using uint = std::size_t;
+using portint_t     = unsigned short;
 
-const char* const IP_SERVER = "0.0.0.0";
-const char* const IP_LOCALHOST = "127.0.0.1";
-const char* const PORT = "4096";
-const int PORT_NUM = 4096;
-const uint kDefaultMsgLen = 128;
-const uint kMaxIpLen = INET6_ADDRSTRLEN;
-const uint kMaxPortLen = 16;
+const size_t k_sock_buf_n = 1024;
+const portint_t k_port = 27015;
+constexpr const char* k_cport = "27015";
 
+enum class SocketState {
+  done,
+  not_ready,
+  partial,
+  disconnected,
+  error
+};
+
+// socket functions namespace
+namespace impl {
+
+#ifdef XMAT_USE_WINSOCKET
+using socket_t      = SOCKET;
+using address_len_t = int;
+using size_p        = int;
+#else // unix
+using socket_t      = int;
+using address_len_t = socklen_t;
+using size_p        = size_t;
+#endif
+
+
+#ifdef XMAT_USE_WINSOCKET
+const int tcp_send_flags = 0;
+const auto tcp_so_reuseaddr = SO_REUSEADDR;
+
+sockaddr_in create_address(std::uint32_t address, unsigned short port) {
+    sockaddr_in addr{};
+    addr.sin_addr.s_addr = htonl(address);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    return addr;
+}
+
+constexpr socket_t k_invalid_socket = INVALID_SOCKET;
+
+socket_t invalid_socket() { return k_invalid_socket; }
+
+void close(socket_t socket) { closesocket(socket); }
+
+void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
+
+SocketState get_error() {
+  switch (WSAGetLastError()) {
+    case WSAEALREADY:     return SocketState::not_ready;
+    case WSAEWOULDBLOCK:  return SocketState::not_ready;
+    case WSAECONNRESET:   return SocketState::disconnected;
+    case WSAENETRESET:    return SocketState::disconnected;
+    case WSAECONNABORTED: return SocketState::disconnected;
+    case WSAETIMEDOUT:    return SocketState::disconnected;
+    case WSAENOTCONN:     return SocketState::disconnected;
+    case WSAEISCONN:      return SocketState::done;
+    default:              return SocketState::error;
+  }
+}
+
+inline void print_error(int errcode) {
+  const DWORD size = 256;
+  char buffer[size];
+  FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 
+                NULL, 
+                errcode,
+                MAKELANGID(LANG_NEUTRAL, SUBLANG_ENGLISH_US), 
+                buffer, 
+                size, 
+                NULL);
+  std::printf("xmat::xsocket::print_error : %s\n", buffer);
+}
+
+inline int print_error() { 
+  int errcode = WSAGetLastError(); 
+  print_error(errcode); 
+  return errcode;
+}
+
+#else
+const int tcp_send_flags = MSG_NOSIGNAL;
+const auto tcp_so_reuseaddr = SO_REUSEADDR | SO_REUSEPORT;
+
+sockaddr_in create_address(std::uint32_t address, unsigned short port) {
+    sockaddr_in addr{};
+    addr.sin_addr.s_addr = htonl(address);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    // addr.sin_len = sizeof(addr); // MAC
+    return addr;
+}
+
+constexpr socket_t k_invalid_socket = -1;
+
+socket_t invalid_socket() { return k_invalid_socket; }
+
+void close(socket_t socket) { ::close(socket); }
+
+void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
+
+SocketState get_error() {
+  if ((errno == EAGAIN) || (errno == EINPROGRESS)) {
+    return SocketState::not_ready;
+  }
+
+  switch (errno) {
+    case EWOULDBLOCK:  return SocketState::not_ready;
+    case ECONNRESET:   return SocketState::disconnected;
+    case ENETRESET:    return SocketState::disconnected;
+    case ECONNABORTED: return SocketState::disconnected;
+    case ETIMEDOUT:    return SocketState::disconnected;
+    case ENOTCONN:     return SocketState::disconnected;
+    case EPIPE:        return SocketState::disconnected;
+    default:           return SocketState::error;
+  }
+}
+#endif
+} // namespace impl
 
 class SocketError : public std::runtime_error {
  public:
@@ -58,436 +167,350 @@ class SocketError : public std::runtime_error {
 };
 
 
-namespace impl {
-
-std::array<char, kMaxPortLen> portstr(int a) {
-  std::array<char, kMaxPortLen> str{};
-  std:sprintf(str.begin(), "%d", a);
-  return str;
-}
-
-void *get_in_addr(struct sockaddr *sa)
-{
-	if (sa->sa_family == AF_INET) {
-		return &(((struct sockaddr_in*)sa)->sin_addr);
-	}
-	return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
-
-} // namespace `impl`
-
-
-class Socket {
+class SocketStartup {
  public:
 
-  enum class Mode{
-    server = 0,
-    connection,
-    client,
-    undef,
-    numel
-  };
+  size_t counter = 0;
 
-  static constexpr const char* mode_name[static_cast<size_t>(Mode::numel)] = {"server", "connection", "client", "undef"};
+  static SocketStartup* init() {
+    static SocketStartup socket;
+    socket.counter += 1;  // just for size-effect. to avoid compilter optimization.
+    return &socket;
+  }
 
-  virtual ~Socket() { close(false); }
-  Socket() = default;
-  Socket(const Socket&) = delete;
-  Socket& operator=(const Socket&) = delete;
-  Socket(Socket&& other) noexcept { swap(other); }
+  SocketStartup(const SocketStartup&) = delete;
+  SocketStartup(SocketStartup&&) = delete;
+  SocketStartup& operator=(const SocketStartup&) = delete;
+  SocketStartup& operator=(SocketStartup&&) = delete;
 
-  Socket& operator=(Socket&& other) noexcept {
-    Socket tmp(std::move(other));
-    swap(tmp);
+  ~SocketStartup() {
+    std::printf("xmat::SocketStartup::!SocketStartup(): WSACleanup()\n");
+#ifdef XMAT_USE_WINSOCKET
+    int iResult = WSACleanup();
+    if (iResult != 0) {
+      // no-throw bucause of it's destructor. just print
+      assert(false);
+#ifndef NDEBUG
+      std::printf("xmat::SocketStartup::~SocketStartup(). WSACleanup failed with error:\nerrno: %d", WSAGetLastError());
+#endif      
+    }
+#endif
+  }
+
+ private:
+  SocketStartup() {
+#ifndef NDEBUG
+    std::printf("xmat::SocketStartup::SocketStartup(): WSAStartup(...)\n");
+#endif
+#ifdef XMAT_USE_WINSOCKET
+    WSADATA wsaData;
+    int iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
+    if(iResult != 0) {
+        throw SocketError("xmat::SocketStartup::SocketStartup(). WSAStartup failed with error");
+    }
+#endif
+  }
+}; // class SocketStartup 
+
+
+struct IPAddress {
+  static IPAddress any() noexcept { return IPAddress{INADDR_ANY}; }
+  static IPAddress localhost() noexcept { return IPAddress{INADDR_LOOPBACK}; }
+  static IPAddress none() noexcept { return IPAddress{INADDR_NONE}; }
+
+  static IPAddress make(VString address) {
+    if (address.empty()) { return none(); }
+    if (address == "0.0.0.0") { return any(); }
+    const std::uint32_t ip = inet_addr(address.data());
+    if (ip != INADDR_NONE) { return IPAddress(ntohl(ip)); }
+    return none();
+  }
+  
+  IPAddress() = default;
+
+  explicit IPAddress(std::uint32_t address) : address_{htonl(address)} { }
+
+  IPAddress(std::uint8_t byte0, std::uint8_t byte1, std::uint8_t byte2, std::uint8_t byte3) :
+    address_(htonl(static_cast<std::uint32_t>((byte0 << 24) | (byte1 << 16) | (byte2 << 8) | byte3))) { }
+
+  IPAddress(VString address) { address_ = make(address).address_; }
+
+  std::string to_string() const {
+      in_addr address{};
+      address.s_addr = address_;
+      return inet_ntoa(address);
+  }
+
+  std::int32_t to_int() const noexcept { return ntohl(address_); }
+
+  bool is_none() { return address_ == INADDR_NONE; }
+
+  static IPAddress localaddress() {
+    SocketStartup::init();
+    const impl::socket_t sock = socket(PF_INET, SOCK_DGRAM, 0);
+    if (sock == impl::invalid_socket()) return none();
+
+    sockaddr_in address = impl::create_address(ntohl(INADDR_LOOPBACK), 9);
+    if (::connect(sock, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == -1) {
+        impl::close(sock);
+        return none();
+    }
+ 
+    impl::address_len_t size = sizeof(address);
+    if (getsockname(sock, reinterpret_cast<sockaddr*>(&address), &size) == -1) {
+        impl::close(sock);
+        return none();
+    } 
+    impl::close(sock);
+    return IPAddress(ntohl(address.sin_addr.s_addr));
+  }
+
+  std::uint32_t address_ = INADDR_NONE;   // stored in network order
+};
+
+bool operator==(const IPAddress& lhs, const IPAddress& rhs) {
+    return lhs.address_ < rhs.address_;
+}
+
+std::ostream& operator<<(std::ostream& stream, const IPAddress& address) { 
+  return stream << address.to_string();
+}
+
+
+// ------------------------------------------------------------
+class TCPBase {
+ public:
+  virtual ~TCPBase() { close(); }
+
+  TCPBase(const TCPBase&) = delete;
+
+  TCPBase& operator=(const TCPBase&) = delete;
+
+  TCPBase(TCPBase&& other) : socket_id_{other.socket_id_} {
+    other.socket_id_ = impl::invalid_socket();
+  }
+  
+  TCPBase& operator=(TCPBase&& other) {
+    if (&other == this)  { return *this; }
+    close();
+    socket_id_ = other.socket_id_;
+    other.socket_id_ = impl::invalid_socket();
     return *this;
   }
 
-  void swap(Socket& other) noexcept {
-    std::swap(other.ip_, ip_);
-    std::swap(other.port_, port_);
-    std::swap(other.socket_id_, socket_id_);
-    std::swap(other.is_open_, is_open_);
-    std::swap(other.ready_, ready_);
-    std::swap(other.mode_, mode_);
-    std::swap(other.blocked_, blocked_);
-    std::swap(other.addrinfo_, addrinfo_);
+  // error handling
+  // --------------
+  bool is_invalid() const noexcept { return socket_id_ == impl::k_invalid_socket; }
 
-    other.connection_addr_ = connection_addr_;
+  SocketState state() const noexcept { return status_; }
+
+  // if val := true, throw exception if eny error
+  // if val := false, set status
+  void exceptions(bool val) noexcept { flag_exceptions_ = val; }
+
+  bool exceptions() const noexcept { return flag_exceptions_; }
+
+ protected:
+  TCPBase() { SocketStartup::init(); }
+
+  void create() {
+    assert(is_invalid() && "xmat::Socket::create(...) current state must be non-valid");
+    if (is_invalid()) { return; }
+
+    const impl::socket_t sock = ::socket(PF_INET, SOCK_STREAM, 0);
+    if (sock == impl::k_invalid_socket) {
+      throw SocketError("xmat::TCPBase.create() error\n");
+    }
   }
 
-  // for server: ip := 0.0.0.0
-  // if blocked == true - blocking 
-  // if blocked == false - non-blocking
-  // See also: about EWOULDBLOCK
-  // https://www.ibm.com/docs/en/zos/2.4.0?topic=functions-recv-receive-data-socket
-  Socket(const char* ip_addres, const char* port, bool blocked=true) {
-    assign(ip_, ip_addres);
-    assign(port_, port);
-    blocked_ = blocked;
+  void settings(impl::socket_t sock) {
+    assert(is_invalid() && "xmat::Socket::settings(...) current state must be non-valid");
+    if (!is_invalid()) { return; }
 
-    mode_ = strcmp(ip_addres, IP_SERVER) == 0 ? Mode::server : Mode::client;
-    addrinfo hints{};
-	  hints.ai_family = AF_INET;
-	  hints.ai_socktype = SOCK_STREAM;
-    if (mode_ == Mode::server) { // may be isn't necessary
-	    hints.ai_flags = AI_PASSIVE; // use my IP
+    socket_id_ = sock;
+    const int yes = 1;
+    if(::setsockopt(socket_id_, SOL_SOCKET, impl::tcp_so_reuseaddr, 
+                    reinterpret_cast<const char*>(&yes), sizeof(yes)) == -1) {
+                    
     }
+    if (::setsockopt(socket_id_, IPPROTO_TCP, TCP_NODELAY,
+                      reinterpret_cast<const char*>(&yes), sizeof(yes)) == -1) {
 
-    const int rv = getaddrinfo(ip_.cbegin(), port_.cbegin(), &hints, &addrinfo_);
-	  if (rv != 0) {
-      std::ostringstream oss{};
-      oss << "getaddrinfo: " << gai_strerror(rv) << '\n';
-      throw SocketError(oss.str());
     }
-
-    // get ip string
-		sockaddr_in *ipv4 = (sockaddr_in *)addrinfo_->ai_addr;
-    inet_ntop(addrinfo_->ai_family, &(ipv4->sin_addr), ip_.begin(), sizeof(ip_.size()));
-
-    // make socket descriptor
-    socket_id_ = ::socket(addrinfo_->ai_family, addrinfo_->ai_socktype, addrinfo_->ai_protocol);
-    if (socket_id_ < 0 ) { throw SocketError("error in: SocketTCP{}"); }
-    
-    // for server.accept() non blocking.
-    // note: may be just for server
-    // if (mode_ == Mode::server) { ::fcntl(socket_id_, F_SETFL, O_NONBLOCK); }
-    if (!blocked_) { ::fcntl(socket_id_, F_SETFL, O_NONBLOCK); }
-    is_open_ = true;
   }
 
-  void close(bool flag_exception=true) {
-    if(!is_open_) { return; }
-
-    if (addrinfo_) {
-      ::freeaddrinfo(addrinfo_);
-      addrinfo_ = nullptr;
-    }
-    const int out = ::close(socket_id_);
-    if (flag_exception && out == -1) {
-      std::ostringstream oss{};
-      oss << "SocketTCP::close(): errno(" << errno << ")::" << ::strerror(errno) << '\n';
-      throw SocketError(oss.str());
-    }
-    is_open_ = ready_ = false;
+  void close() {
+    if (is_invalid()) { return; }
+    impl::close(socket_id_);
+    socket_id_ = impl::k_invalid_socket;
   }
 
+  impl::socket_t socket_id_ = impl::k_invalid_socket;
+  SocketState status_ = SocketState::done;
+  bool flag_exceptions_ = true;
+};
 
-  // `client` methods
-  // ----------------
 
-  // support both: blocking and non-bloking socket. 
-  // if blocking - timeout_sec - just ignored. does one attempt to connect in blokking way
-  void connect(const double timeout_sec) {
-    assert(is_open_);
-    if(mode_ != Mode::client) { throw SocketError("Socket::connet(). Socket isn't `client`"); }
-
-    const std::chrono::duration<double> tt{timeout_sec};
-    const std::chrono::duration<double> dt{0.05};
-    const auto tend = std::chrono::system_clock::now() + tt;
-
-    int out = 1;
-    do {
-      out = ::connect(socket_id_, addrinfo_->ai_addr, addrinfo_->ai_addrlen);
-      if (!blocked_ && out < 0) {
-        std::this_thread::sleep_for(dt); 
-      }
-    } while (!blocked_ && out < 0 && std::chrono::system_clock::now() < tend);
-
-    if (out < 0) { 
-      std::ostringstream oss;
-      oss << "Socket.client.connect(timeout) fail. errno(" << errno << ")::" << strerror(errno) << "\n";
-      throw SocketError(oss.str());
-    }
-    ready_ = true;
-  }
-
-  void connect_default_() {   // not used
-    assert(is_open_);
-    if(mode_ != Mode::client) { throw SocketError("Socket::connet(). Socket isn't client"); }
-    const int out = ::connect(socket_id_, addrinfo_->ai_addr, addrinfo_->ai_addrlen);
-    if (out < 0) { 
-      std::ostringstream oss;
-      oss << "Socket.client.connect fail. errno(" << errno << ")::" << strerror(errno) << "\n";
-      throw SocketError(oss.str());
-    }
-    ready_ = true;
-  }
-
-  // `server` methods
-  // ----------------
-
-  // always blocking
-  // it's better to always call it
-  void set_options(int options = SO_REUSEADDR | SO_REUSEPORT) {
-    // may be just for server. may be no.
-    if(mode_ != Mode::server) { throw SocketError("set_options(). Socket.mode != `server`"); }
-    int yes = 1;
-    const int rv2 = setsockopt(socket_id_, SOL_SOCKET, options, &yes, sizeof(options));
-    if (rv2 < 0) { throw SocketError{"error in: SocketTCP::set_options"}; }
-  }
-
-  // always blocking
-  void bind() {
-    if(mode_ != Mode::server) { throw SocketError("bind(). Socket.mode != `server`"); }
-    assert(is_open_);
-    const int out = ::bind(socket_id_, addrinfo_->ai_addr, addrinfo_->ai_addrlen);
-    if (out < 0) { throw SocketError{"nInvalid address/Address not supported \n"}; }
-  }
-
-  // always blocking
-  void listen(int max_queue) {
-    if(mode_ != Mode::server) { throw SocketError("listen(). Socket.mode != `server`"); }
-    const int out = ::listen(socket_id_, max_queue);
-    if (out < 0) { throw SocketError{"error in: Socket::listen()"}; }
-  }
-
-  Socket accept() {
-    Socket connection{};
-    accept__(connection);
-    return connection;
-  }
-
-  // support both: blocking and non-blocking ways
-  // wait for input connection over `timeout_sec` with `time_step`-long pauses
-  Socket accept(double timeout_sec) {
-    std::chrono::duration<double> tt{timeout_sec};
-    std::chrono::duration<double> dt{0.05};
-    auto tend = std::chrono::system_clock::now() + tt;
-
-    Socket connection{};
-    do {
-      accept__(connection);
-      if (connection.is_open_) { 
-        break;
-      }
-      std::this_thread::sleep_for(dt); // or use: std::this_thread::yield();
-    } while (std::chrono::system_clock::now() < tend);
-    return connection;
-  }
-
-  bool accept__(Socket& connection) {
-    assert(is_open_);
-    if(mode_ != Mode::server) { throw SocketError("accept(). Socket.mode != `server`"); }
-    bool flag = false;
-    socklen_t sz = sizeof(connection_addr_);
-    int new_socket_id = ::accept(socket_id_, (sockaddr*)&connection_addr_, &sz);
-
-    if (new_socket_id >= 0) {
-      flag = true;
-      connection.blocked_ = blocked_;
-      if (!connection.blocked_) { ::fcntl(new_socket_id, F_SETFL, O_NONBLOCK); }
-
-      connection.socket_id_ = new_socket_id;
-      connection.is_open_ = true;
-      connection.ready_ = true;
-      connection.mode_ = Mode::connection;
-
-      // input connection ip
-      inet_ntop(connection_addr_.ss_family,
-                impl::get_in_addr((sockaddr*)&connection_addr_),
-                connection.ip_.begin(),
-                connection.ip_.size());              
-      assign(connection.port_, port_.begin());
-    }
-    return flag;
-  }
-
-  // `connection` methods for exchange
-  // ---------------------------------
-
-  // do in blockking way in both cases: bloking and non-blocking socket.
-  // if sending successful: return int > 0
-  // else: throw SocketException
-  int send(const char* buff, const int len) {
-    if(!(mode_ == Mode::client || mode_ == Mode::connection)) {
-      throw SocketError("send(). mode != Mode::client && mode != Mode::connection");
-    }
-    assert(ready_);
-
-    int const max_attempt = 128;
-    int count = 0;
-    int total = 0, bytesleft = len, n;
-
-    while(total < len) {
-        count += 1;
-        n = ::send(socket_id_, buff+total, bytesleft, 0);
-        if (n == -1 || count > max_attempt) { 
-          break; 
-        }
-        total += n;
-        bytesleft -= n;
-    }
-    if(n < 0) {
-      std::ostringstream oss;
-      oss << "Socket.send() failed: out = send(...) < 0. errno: " << ::strerror(errno) << "\n";
-      throw SocketError(oss.str());
-    }
-    if(count > max_attempt ) { SocketError("Socket.send() faild: max_attempt exceeded"); }
-    return count;
-  }
-
-  // Blocking rule:
-  // -------------
-  // mode blocking:
-  //  - all data received
-  //  - error code returned after ::recv
-  //
-  // mode non-blocking:
-  //  - time is out:
-  //    - behaves like `blocking` if any data sample was received during the timeout
-  //    - didn't receive any sample of data: return -1;
-  //  
-  // Return
-  // ------
-  // int > 0: if success
-  //  0 : if data isn't available (only for non-blocking mode)
-  // -1 : connection closed
-  // 
-  // Exceptions
-  // ----------
-  // SocketError:
-  //  - error in recv
-  //  - connection closed
-  //  - time exceed
-  int resv(char* buff, const int len, double timeout_sec = 1.0) {
-    if(!(mode_ == Mode::client || mode_ == Mode::connection)) {
-      throw SocketError("resv(). mode != Mode::client && mode != Mode::connection"); 
-    }    
-    assert(ready_);
-
-    std::chrono::duration<double> tt{timeout_sec};
-    std::chrono::duration<double> dt{0.05};
-    auto tend = std::chrono::system_clock::now() + tt;
-
-    int count = 0;
-    int total = 0, bytesleft = len, n;
-
-    do {
-      count += 1;
-      n = ::recv(socket_id_, buff+total, bytesleft, 0);
-      if (n == 0 || (n == -1 && errno != EWOULDBLOCK)) {
-        break;
-      }
-      const int k = int(!(n==-1)) * n; // n = n == -1 ? 0 : n;
-      total += k;
-      bytesleft -= k;
-      if (total == 0) { // just if didn't accept a single piece of data
-        std::this_thread::sleep_for(dt);
-      }
-    } while (total < len      // length condition
-             && (blocked_     // if socket is blocking - timeout doesn't matter
-                 || !(total == 0 && std::chrono::system_clock::now() > tend)));  // if buffer is steel empty
-
-    if (n == -1 && errno == EWOULDBLOCK) {
-      return 0; // just the data isn't available
-    } else {
-      if(n < 0) {
-        std::ostringstream oss;
-        oss << "Socket.recv() failed: resv(:) < 0. errno: " << strerror(errno) << "\n";
-        throw SocketError(oss.str()); 
-      }
-      if(n == 0) { throw SocketError("Socket.resv() failed: resv(:) == 0. Connection is closed"); }
-      // timeout exceed
-      if(total == 0) { throw SocketError("Socket.send() failed. timeout exceed."); }
-    }
-    return count;
-  }
-
-  // allowed just for non-blockking socket
-  // wait for `timeout_sec` until data is available.
-  // next read data while data is available.
-  // 
-  // Return
-  // ------
-  // number of bytes received
-  // if didn't receive any data during `timeout` - stop waiting. return 0
-  // if all data revaived and connection was closed - return num of bytes without error about closing
-  //
-  // Exceptions:
-  // if `errno` == 0
-  // if number of received bytes == 0, and connection closed:
-  // 
-  int recv_all(char* buff, const int buff_len, double timeout_sec=1.0) {
-    if (blocked_) { throw SocketError("Socket.recv_all: socket must be non-blocking"); }
-    if(!(mode_ == Mode::client || mode_ == Mode::connection)) {
-      throw SocketError("resv(). mode != Mode::client && mode != Mode::connection");
-    }
-    assert(ready_);
-
-    std::chrono::duration<double> tt{timeout_sec};
-    std::chrono::duration<double> dt{0.05};
-    auto tend = std::chrono::system_clock::now() + tt;
-
-    int total = 0, bytesleft = buff_len, n;
-    while (bytesleft && !(total == 0 && std::chrono::system_clock::now() > tend)) {
-      n = ::recv(socket_id_, buff+total, bytesleft, 0);
-      if (n == 0 // connection is closed
-          || (n == -1 // if any error, except EWOULDBLOCK, but if no sample data received
-              && !(total == 0 && errno == EWOULDBLOCK))) {
-        break;
-      }
-      const int k = int(!(n==-1)) * n; // n = n == -1 ? 0 : n;
-      total += k;
-      bytesleft -= k;
-      if (total == 0) { std::this_thread::sleep_for(dt); }
-    }
-
-    if(n < 0 && ! n == EWOULDBLOCK) {  // any error 
-      std::ostringstream oss;
-      oss << "Socket.resv_all() failed: out = send(:) < 0. errno(" << errno << ")::"
-          << strerror(errno) << "\n";
-      throw SocketError(oss.str());
-    }
-    if(total == 0 && n == 0) {
-      throw SocketError("Socket.resv_all() failed: resv(:) == 0. Connection is closed");
-    }
-
-    return total;
-  }
-
-  // getters
-  // -------
-  const char* port() const { return port_.data(); }
-  const char* ip() const { return ip_.data(); }
-
-  bool is_open() const { return is_open_; }
-  bool is_ready() const { return ready_; }
-  bool is_blocking() const { return blocked_; }
-
-  bool is_server() const { return mode_ == Mode::server; }
-  bool is_connection() const { return mode_ == Mode::connection; }
-  bool is_client() const { return mode_ == Mode::client; }
-
-  int num_bytes_available() {
-    if (!ready_) { throw SocketError("Socket.num_bytes_available(). socket isn`t ready"); }
-
-    int N = 0;
-    const int out = ::ioctl(socket_id_, FIONREAD, &N);
-    // ioctlsocket(socket,FIONREAD,&bytes_available)  Windows
-    if (out < 0) {
-        std::ostringstream oss;
-        oss << "Socket.num_bytes_available() failed: \nerrno: " << strerror(errno) << "\n";
-        throw SocketError(oss.str());
-    }
-    return N;
-  }
-
+// ------------------------------------------------------------
+class TCPSocket : public TCPBase {
  public:
-  std::array<char, kMaxIpLen> ip_{};
-  std::array<char, kMaxPortLen> port_{};
+  enum class Mode { client, connection, undef };
 
-  int socket_id_ = -2;
-  bool is_open_ = false;
-  bool ready_ = false;
+  friend class TCPListener;
+
+  TCPSocket() = default;
+
+  SocketState connect(IPAddress address, unsigned int port) {
+    disconnect();
+    create();
+
+    sockaddr_in address_v = impl::create_address(address.to_int(), port);
+    if (::connect(socket_id_, reinterpret_cast<sockaddr*>(&address_v), sizeof(address_v)) == -1) {
+      return impl::get_error();
+    }
+    return SocketState::done;
+  }
+
+  // just in case
+  SocketState connect(const char* address, const char* port) {
+    disconnect();
+
+    addrinfo *result = NULL, *ptr = NULL, hints = {};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    auto iResult = getaddrinfo(address, port, &hints, &result);
+    if ( iResult != 0 ) { 
+      impl::print_error(); 
+      return SocketState::error;
+    }
+
+    for(ptr=result; ptr != NULL ;ptr=ptr->ai_next) {
+      create();
+      if(::connect(socket_id_, ptr->ai_addr, (int)ptr->ai_addrlen) == -1) {
+        close();
+      }
+      break;
+    }
+    ::freeaddrinfo(result);
+    return socket_id_ != impl::invalid_socket() ? SocketState::done : SocketState::error;
+  }
+
+  void disconnect() { close(); }
+
+
+  // ----
+  IPAddress remoteaddress() const { 
+    if (socket_id_ != impl::invalid_socket()) {
+      sockaddr_in address{};
+      impl::address_len_t size = sizeof(address);
+      if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
+        return IPAddress(ntohl(address.sin_addr.s_addr));
+      }
+    }
+    return IPAddress::none();
+  }
+  
+  unsigned short remoteport() const { 
+    if (socket_id_ != impl::invalid_socket()) {
+      sockaddr_in address{};
+      impl::address_len_t size = sizeof(address);
+      if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
+        return ntohs(address.sin_port);
+      }
+    }
+    return 0;
+  }
+
+  unsigned short localport() const { 
+    if (socket_id_ != impl::invalid_socket()) {
+      sockaddr_in address{};
+      impl::address_len_t size = sizeof(address);
+      if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
+        return ntohs(address.sin_port);
+      }
+    }
+    return 0;
+  }
+
   Mode mode_ = Mode::undef;
-  bool blocked_ = false;
+};
 
- private:
-  // for: server, client
-  addrinfo* addrinfo_ = nullptr;
 
-  // for: connection
-  sockaddr_storage connection_addr_{};
+
+// ------------------------------------------------------------
+class TCPListener : public TCPBase {
+ public:
+  
+  TCPListener() = default;
+
+  SocketState listen(unsigned short port, IPAddress address = IPAddress{0, 0, 0, 0}) {
+    close();
+    create();
+    
+    if (address.is_none()) { return SocketState::error; }
+
+    sockaddr_in addr = impl::create_address(address.to_int(), port);
+    if (::bind(socket_id_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == -1) {
+      printf("Failed to bind listener socket\n");
+      impl::print_error();
+      return SocketState::error;
+    }
+
+    if (::listen(socket_id_, SOMAXCONN) == -1) {
+      printf("Failed to bind listener socket\n");
+      return SocketState::error;
+    }
+    return SocketState::done;
+  }
+
+  SocketState accept(TCPSocket& socket) {
+    if (socket_id_ == impl::invalid_socket()) {
+        printf("Failed to accept a new connection, the socket is not listening");
+        return SocketState::error;
+    }
+
+    sockaddr_in address{};
+    impl::address_len_t length = sizeof(address);
+    const impl::socket_t remote = ::accept(socket_id_, reinterpret_cast<sockaddr*>(&address), &length);
+
+    if (remote == impl::invalid_socket()) { return impl::get_error(); }
+
+    socket.close();
+    socket.settings(remote);
+
+    return SocketState::done;
+  }
+
+  unsigned int localport() const {
+    if (socket_id_ == impl::invalid_socket()) { 
+      return 0;   
+    }
+    sockaddr_in address{};
+    impl::address_len_t size = sizeof(address);
+    if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
+        return ntohs(address.sin_port);
+    }
+  }
 };
 
 } // namespace xmat
+
+
+/* 
+See for help:
+------------
+
+## Windows Sockets 2:
+https://learn.microsoft.com/ru-ru/windows/win32/winsock/windows-sockets-start-page-2
+
+## Beej's Guide to Network Programming:
+https://beej.us/guide/bgnet/html/#platform-and-compiler
+
+## timeout:
+https://stackoverflow.com/questions/4181784/how-to-set-socket-timeout-in-c-when-making-multiple-connections
+https://stackoverflow.com/questions/2597608/c-socket-connection-timeout
+https://learn.microsoft.com/ru-ru/windows/win32/api/winsock/nf-winsock-setsockopt
+*/
+

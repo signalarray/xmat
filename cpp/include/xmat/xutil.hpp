@@ -31,16 +31,22 @@ size_t assign(std::array<char, N>& dest, const char* src) {
 // string view
 // ----------------------------
 struct VString {
-  VString(const char* s) : ptr{s}, size_{std::strlen(s)} {}
-  VString(const std::string& s) : ptr{s.c_str()}, size_{s.size()} {}
+  VString(const char* s) : ptr{s} {}
+  VString(const std::string& s) : ptr{s.c_str()} {}
   operator const char*() { return ptr; }
 
-  size_t size() { return size_; }
+  const char* data() const noexcept { return ptr; }
+  bool empty() const noexcept { return !size(); }
+  size_t size() const noexcept { return std::strlen(ptr); }
   
-  const char* ptr = nullptr;
-  size_t size_ = 0;
-};
+  bool operator==(const VString& other) const noexcept { return std::strcmp(ptr, other.ptr); }
+  bool operator==(const char* other) const noexcept { return std::strcmp(ptr, other); }
+  bool operator==(const std::string& other) const noexcept { return other == ptr; }
+  friend bool operator==(const char* lhs, const VString& rhs) noexcept { return rhs == lhs; }
+  friend bool operator==(const std::string& lhs, const VString& rhs) noexcept { return rhs == lhs; }
 
+  const char* ptr = nullptr;
+};
 
 inline size_t next_pow2(size_t n) noexcept {
   size_t pow = 1, k = 0;
@@ -78,7 +84,11 @@ inline bool is_aligned(const void* ptr) noexcept {
   return !(reinterpret_cast<uintptr_t>(ptr) % Aln);
 }
 
-
+// is little endian
+inline bool isle() {
+  size_t x = 1;
+  return *((char *) &x);
+}
 
 // template<typename T, class Arena = GlobalMemSource>
 // class GlobalMemAllocator {

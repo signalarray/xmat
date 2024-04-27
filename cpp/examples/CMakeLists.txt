@@ -6,10 +6,19 @@ add_executable(samples_xstream samples_xstream.cpp)
 
 add_executable(example_file example_file.cpp)
 
-if (UNIX)
-  add_executable(example_xsocket_server example_xsocket_server.cpp)
-  add_executable(example_xsocket_client example_xsocket_client.cpp)
+add_executable(samples_xsocket_server samples_xsocket_server.cpp)
+add_executable(samples_xsocket_client samples_xsocket_client.cpp)
 
-  add_executable(samples_xnetwork_server samples_xnetwork_server.cpp)
-  add_executable(samples_xnetwork_client samples_xnetwork_client.cpp)
+# ----------------
+# Isn't actual now
+# ----------------
+# add_executable(samples_xnetwork_server samples_xnetwork_server.cpp)
+# add_executable(samples_xnetwork_client samples_xnetwork_client.cpp)
+
+if (WIN32)
+    target_link_libraries(samples_xsocket_server ws2_32)
+    target_link_libraries(samples_xsocket_client ws2_32)
+    
+    # target_link_libraries(samples_xnetwork_server ws2_32)
+    # target_link_libraries(samples_xnetwork_client ws2_32)
 endif()

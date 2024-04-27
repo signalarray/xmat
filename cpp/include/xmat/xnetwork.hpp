@@ -7,6 +7,9 @@
 #include "xsocket.hpp"
 #include "xstream.hpp"
 
+// ----------------
+// Isn't actual now
+// ----------------
 
 namespace xmat {
 
