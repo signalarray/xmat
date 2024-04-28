@@ -19,15 +19,10 @@ int sample_x() {
 
 int sample_1() {
   print(4, __PRETTY_FUNCTION__, 1);
-  print("COMMENT", 0, '-');
-
-  char buf[xmat::k_sock_buf_n] = "";
+  print("TCPSocket - connection only", 0, '-');
 
   xmat::TCPSocket socket;
-  // auto resout = socket.connect(xmat::IPAddress{127, 0, 0, 1}, xmat::k_port);
-  auto resout = socket.connect(xmat::IPAddress::localhost(), xmat::k_port);
-  if(resout != xmat::SocketState::done) { throw std::runtime_error("socket.connect"); }
-  
+  socket.connect(xmat::IPAddress::localhost(), xmat::k_xsport);
 
   print(1, "FINISH", 1, '=');
   return 1;
@@ -43,8 +38,9 @@ int main() {
 
   }
   catch (std::exception& err) {
-    print(1, "exception in main()", 1, '+');
-    print_mv("exception message: >>", err.what());
+    print("\n+++++++++++++++++++++\n");
+    print_mv("exception im main: message: >>\n", err.what());
+    print("\n+++++++++++++++++++++\n");
     return EXIT_FAILURE;  
   }
   print(1, "FINISH" __FILE__, 1, '=');

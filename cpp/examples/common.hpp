@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstring>
 #include <iostream>
+#include <string>
 
 #include <type_traits>
 
@@ -12,6 +13,7 @@
 #if !defined(__PRETTY_FUNCTION__) && !defined(__GNUC__)
 #define __PRETTY_FUNCTION__ __FUNCSIG__
 #endif
+
 
 extern std::ostream* kOutStream;
 
@@ -25,7 +27,7 @@ class has_cbegin_cend
   template <typename C> static two test(...);
 
 public:
-  static const bool value = sizeof(test<T>(0)) == sizeof(char);
+  static const bool value = sizeof(test<T>(0)) == sizeof(char) && !std::is_same_v<T, std::string>;
 };
 
 

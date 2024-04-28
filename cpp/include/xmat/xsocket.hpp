@@ -31,7 +31,8 @@
 #include <cstdint>
 
 // cpp-lang
-
+#include <sstream>
+#include <utility>
 
 
 // project
@@ -40,19 +41,21 @@
 
 namespace xmat {
 
-using portint_t     = unsigned short;
+using portint_t = unsigned short;
+constexpr size_t      k_xsbuff_size = 1024;
+constexpr portint_t   k_xsport = 27015;
+constexpr const char* k_xsport_str = "27015";
 
-const size_t k_sock_buf_n = 1024;
-const portint_t k_port = 27015;
-constexpr const char* k_cport = "27015";
-
-enum class SocketState {
-  done,
-  not_ready,
-  partial,
-  disconnected,
-  error
+enum class xsstate : int {
+  good,       // all is ok
+  error,      // socket functions errors
+  gaierror,   // ::getaddrinfo error
+  fail,       // logic non-system error
+  numel
 };
+
+constexpr char* xsstate_str[static_cast<int>(xsstate::numel)] = 
+  {"good", "error", "gaierror", "fail"};
 
 // socket functions namespace
 namespace impl {
@@ -61,109 +64,122 @@ namespace impl {
 using socket_t      = SOCKET;
 using address_len_t = int;
 using size_p        = int;
+
+constexpr int         tcp_send_flags    = 0;
+constexpr auto        tcp_so_reuseaddr  = SO_REUSEADDR;
+constexpr socket_t    k_invalid_socket  = INVALID_SOCKET;
+constexpr int         k_socket_error    = SOCKET_ERROR;
+
 #else // unix
 using socket_t      = int;
 using address_len_t = socklen_t;
 using size_p        = size_t;
+
+constexpr int         tcp_send_flags    = MSG_NOSIGNAL;
+constexpr auto        tcp_so_reuseaddr  = SO_REUSEADDR | SO_REUSEPORT;s
+constexpr socket_t    k_invalid_socket  = -1;
+constexpr int         k_socket_error    = 1;
 #endif
 
 
 #ifdef XMAT_USE_WINSOCKET
-const int tcp_send_flags = 0;
-const auto tcp_so_reuseaddr = SO_REUSEADDR;
+inline int close(socket_t socket) noexcept { return closesocket(socket); }
 
-sockaddr_in create_address(std::uint32_t address, unsigned short port) {
-    sockaddr_in addr{};
-    addr.sin_addr.s_addr = htonl(address);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    return addr;
-}
+inline void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
 
-constexpr socket_t k_invalid_socket = INVALID_SOCKET;
+// error's stuff
+// -------------
+inline int err_get_code() { return WSAGetLastError(); }
 
-socket_t invalid_socket() { return k_invalid_socket; }
-
-void close(socket_t socket) { closesocket(socket); }
-
-void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
-
-SocketState get_error() {
-  switch (WSAGetLastError()) {
-    case WSAEALREADY:     return SocketState::not_ready;
-    case WSAEWOULDBLOCK:  return SocketState::not_ready;
-    case WSAECONNRESET:   return SocketState::disconnected;
-    case WSAENETRESET:    return SocketState::disconnected;
-    case WSAECONNABORTED: return SocketState::disconnected;
-    case WSAETIMEDOUT:    return SocketState::disconnected;
-    case WSAENOTCONN:     return SocketState::disconnected;
-    case WSAEISCONN:      return SocketState::done;
-    default:              return SocketState::error;
-  }
-}
-
-inline void print_error(int errcode) {
-  const DWORD size = 256;
-  char buffer[size];
-  FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, 
-                NULL, 
-                errcode,
-                MAKELANGID(LANG_NEUTRAL, SUBLANG_ENGLISH_US), 
-                buffer, 
-                size, 
-                NULL);
-  std::printf("xmat::xsocket::print_error : %s\n", buffer);
-}
-
-inline int print_error() { 
-  int errcode = WSAGetLastError(); 
-  print_error(errcode); 
-  return errcode;
+inline std::string err_get_str(int errcode) {
+  std::string msg;
+  LPSTR buffer = nullptr;
+  auto resout = FormatMessage(
+    FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+    NULL,
+    errcode,
+    MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
+    //MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+    reinterpret_cast<LPTSTR>(&buffer),
+    0,
+    NULL
+  );
+  msg = buffer;
+  LocalFree(buffer);
+  return msg;
 }
 
 #else
-const int tcp_send_flags = MSG_NOSIGNAL;
-const auto tcp_so_reuseaddr = SO_REUSEADDR | SO_REUSEPORT;
+inline int close(socket_t socket) noexcept { return ::close(socket); }
 
-sockaddr_in create_address(std::uint32_t address, unsigned short port) {
+inline void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
+
+// error's stuff
+// -------------
+inline int err_get_code() { return errno; }
+
+inline std::string err_get_str(int errcode) {
+  return std::string(::strerror(errcode));
+}
+
+#endif
+
+inline sockaddr_in create_address(std::uint32_t address, unsigned short port) {
     sockaddr_in addr{};
+    std::memset(&addr, 0, sizeof(addr)); // in case
     addr.sin_addr.s_addr = htonl(address);
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    // addr.sin_len = sizeof(addr); // MAC
+    // addr.sin_len = sizeof(addr);   // if MACOS
     return addr;
 }
 
-constexpr socket_t k_invalid_socket = -1;
+inline socket_t invalid_socket() { return k_invalid_socket; }
 
-socket_t invalid_socket() { return k_invalid_socket; }
+inline bool is_invalid_socket(socket_t sock) { return sock == k_invalid_socket; }
 
-void close(socket_t socket) { ::close(socket); }
 
-void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
+inline std::string err_get_str() { return err_get_str(err_get_code()); }
 
-SocketState get_error() {
-  if ((errno == EAGAIN) || (errno == EINPROGRESS)) {
-    return SocketState::not_ready;
-  }
+inline void err_print(int errcode) { std::printf(err_get_str().c_str()); }
+} // namespace impl -----
 
-  switch (errno) {
-    case EWOULDBLOCK:  return SocketState::not_ready;
-    case ECONNRESET:   return SocketState::disconnected;
-    case ENETRESET:    return SocketState::disconnected;
-    case ECONNABORTED: return SocketState::disconnected;
-    case ETIMEDOUT:    return SocketState::disconnected;
-    case ENOTCONN:     return SocketState::disconnected;
-    case EPIPE:        return SocketState::disconnected;
-    default:           return SocketState::error;
-  }
-}
-#endif
-} // namespace impl
 
 class SocketError : public std::runtime_error {
  public:
-  using std::runtime_error::runtime_error;
+  SocketError(xsstate state, const char* comment = nullptr, int sys_error_code = 0) 
+   : std::runtime_error{make_msg(state, comment, sys_error_code)} { }
+
+  static std::string make_msg(xsstate state, const char* comment = nullptr, int sys_error_code = 0) {
+    std::ostringstream oss;
+    oss << "xmat::xsstate-code := " << static_cast<unsigned int>(state) << "\n"
+        << "xmat::xsstate-name := " << xsstate_str[static_cast<unsigned int>(state)] << "\n";
+
+    if (comment) { 
+      oss << "comment: " << comment << "\n"; 
+    }
+    
+    if (state == xsstate::error) { // print socket-system error msg
+      if (sys_error_code == 0) { 
+        sys_error_code = impl::err_get_code(); 
+      }
+      oss << "state := error. \n"
+          << "sys-code: =" << sys_error_code << "\n"
+          << "sys-error-msg: " << impl::err_get_str(sys_error_code) << "\n";
+    }
+    else if (state == xsstate::gaierror) { // getaddrinfo spesific errors
+      if (sys_error_code == 0) {
+        sys_error_code = impl::err_get_code();
+      }
+      oss << "state := gaierror. "
+          << "code: =" << sys_error_code << "\n"
+          << "sys-error-msg: " << gai_strerror(sys_error_code) << "\n";
+    }
+    else if (state == xsstate::fail) { // print Socket-class-logic error(fail) msg
+      oss << "state := fail. ";
+    }
+    return oss.str();
+  }
 };
 
 
@@ -174,7 +190,7 @@ class SocketStartup {
 
   static SocketStartup* init() {
     static SocketStartup socket;
-    socket.counter += 1;  // just for size-effect. to avoid compilter optimization.
+    socket.counter += 1;  // just for size-effect.
     return &socket;
   }
 
@@ -189,10 +205,11 @@ class SocketStartup {
     int iResult = WSACleanup();
     if (iResult != 0) {
       // no-throw bucause of it's destructor. just print
-      assert(false);
 #ifndef NDEBUG
-      std::printf("xmat::SocketStartup::~SocketStartup(). WSACleanup failed with error:\nerrno: %d", WSAGetLastError());
-#endif      
+      std::printf("xmat::SocketStartup::~SocketStartup()."
+                  " WSACleanup failed with error:\nerrno: %d", WSAGetLastError());
+#endif
+      assert(false);
     }
 #endif
   }
@@ -205,8 +222,9 @@ class SocketStartup {
 #ifdef XMAT_USE_WINSOCKET
     WSADATA wsaData;
     int iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
-    if(iResult != 0) {
-        throw SocketError("xmat::SocketStartup::SocketStartup(). WSAStartup failed with error");
+    if(iResult != 0) { 
+      throw SocketError(xsstate::error, "xmat::SocketStartup::SocketStartup(). "
+                                        "WSAStartup() failed with error");
     }
 #endif
   }
@@ -278,31 +296,39 @@ std::ostream& operator<<(std::ostream& stream, const IPAddress& address) {
 
 
 // ------------------------------------------------------------
-class TCPBase {
+class SocketBase {
  public:
-  virtual ~TCPBase() { close(); }
-
-  TCPBase(const TCPBase&) = delete;
-
-  TCPBase& operator=(const TCPBase&) = delete;
-
-  TCPBase(TCPBase&& other) : socket_id_{other.socket_id_} {
-    other.socket_id_ = impl::invalid_socket();
+  virtual ~SocketBase() { 
+    if (!is_valid()) { return; }
+    auto resout = impl::close(socket_id_);
+#ifndef NDEBUG
+    if (resout == impl::k_socket_error) {
+      std::printf("xmat::SocketBase::destructor(): "
+                  "impl::close(socket_id_) -> != 0\n message: \n");
+      std::printf(impl::err_get_str().c_str());
+    }
+#endif
   }
+
+  SocketBase(const SocketBase&) = delete;
+
+  SocketBase& operator=(const SocketBase&) = delete;
+
+  SocketBase(SocketBase&& other) noexcept { std::swap(*this, other); }
   
-  TCPBase& operator=(TCPBase&& other) {
-    if (&other == this)  { return *this; }
-    close();
-    socket_id_ = other.socket_id_;
-    other.socket_id_ = impl::invalid_socket();
+  SocketBase& operator=(SocketBase&& other) {
+    SocketBase tmp(std::move(other));
+    std::swap(*this, tmp);
     return *this;
   }
 
-  // error handling
-  // --------------
-  bool is_invalid() const noexcept { return socket_id_ == impl::k_invalid_socket; }
+  // state and error handling
+  // ------------------------
+  bool is_valid() const noexcept { return !impl::is_invalid_socket(socket_id_); }
 
-  SocketState state() const noexcept { return status_; }
+  bool is_good() const noexcept { return state_ == xsstate::good; }
+
+  xsstate state() const noexcept { return state_; }
 
   // if val := true, throw exception if eny error
   // if val := false, set status
@@ -311,48 +337,66 @@ class TCPBase {
   bool exceptions() const noexcept { return flag_exceptions_; }
 
  protected:
-  TCPBase() { SocketStartup::init(); }
-
-  void create() {
-    assert(is_invalid() && "xmat::Socket::create(...) current state must be non-valid");
-    if (is_invalid()) { return; }
-
-    const impl::socket_t sock = ::socket(PF_INET, SOCK_STREAM, 0);
-    if (sock == impl::k_invalid_socket) {
-      throw SocketError("xmat::TCPBase.create() error\n");
-    }
+  // See: stackoverflow.com/questions/14038589
+  void handle_error(xsstate state, const char* comment = nullptr) const {
+    assert(state != xsstate::good && "state isn't supposed to be an `ok`");
+    state_ = state;
+    if (exceptions()) { throw SocketError(state, comment); }
   }
 
-  void settings(impl::socket_t sock) {
-    assert(is_invalid() && "xmat::Socket::settings(...) current state must be non-valid");
-    if (!is_invalid()) { return; }
+ protected:
+  SocketBase() { SocketStartup::init(); }
 
+  void create() {
+    assert(!is_valid() && "xmat::Socket::create(...)"
+                          "current state must be invalid. call `close` before");
+    const impl::socket_t sock = ::socket(PF_INET, SOCK_STREAM, 0);
+    if (impl::is_invalid_socket(sock)) {
+      return handle_error(xsstate::error, "SocketBase::create(). returns invalid socket");
+    }
+    setoptions(sock);
+  }
+
+  void setoptions(impl::socket_t sock) {
+    assert(!is_valid() && "xmat::Socket::settings(...)"
+                          "current state must be non-valid");
     socket_id_ = sock;
     const int yes = 1;
-    if(::setsockopt(socket_id_, SOL_SOCKET, impl::tcp_so_reuseaddr, 
-                    reinterpret_cast<const char*>(&yes), sizeof(yes)) == -1) {
-                    
+    if(::setsockopt(socket_id_,
+                    SOL_SOCKET,
+                    impl::tcp_so_reuseaddr,
+                    reinterpret_cast<const char*>(&yes), 
+                    sizeof(yes)) == impl::k_socket_error) {
+      return handle_error(xsstate::error, "xmat::SocketBase::setoptions(). "
+                                          "setsockopt(.., impl::tcp_so_reuseaddr, ..)");
     }
-    if (::setsockopt(socket_id_, IPPROTO_TCP, TCP_NODELAY,
-                      reinterpret_cast<const char*>(&yes), sizeof(yes)) == -1) {
-
+    if (::setsockopt(socket_id_,
+                     IPPROTO_TCP,
+                     TCP_NODELAY,
+                     reinterpret_cast<const char*>(&yes), 
+                     sizeof(yes)) == impl::k_socket_error) {
+      return handle_error(xsstate::error, "xmat::SocketBase::setoptions(). "
+                                          "setsockopt(.., TCP_NODELAY, ..)");
     }
   }
 
   void close() {
-    if (is_invalid()) { return; }
-    impl::close(socket_id_);
+    if (!is_valid()) { return; }
+    if(impl::close(socket_id_) == impl::k_socket_error ) {
+      return handle_error(xsstate::error);
+    }
     socket_id_ = impl::k_invalid_socket;
   }
 
+ public:
   impl::socket_t socket_id_ = impl::k_invalid_socket;
-  SocketState status_ = SocketState::done;
+  mutable xsstate state_ = xsstate::good;
   bool flag_exceptions_ = true;
 };
 
 
 // ------------------------------------------------------------
-class TCPSocket : public TCPBase {
+class TCPSocket : public SocketBase {
  public:
   enum class Mode { client, connection, undef };
 
@@ -360,78 +404,97 @@ class TCPSocket : public TCPBase {
 
   TCPSocket() = default;
 
-  SocketState connect(IPAddress address, unsigned int port) {
-    disconnect();
+  void connect(IPAddress address, unsigned int port) {
+    assert(is_good());
+    close();
     create();
+    if(!is_good()) { return; }
 
     sockaddr_in address_v = impl::create_address(address.to_int(), port);
-    if (::connect(socket_id_, reinterpret_cast<sockaddr*>(&address_v), sizeof(address_v)) == -1) {
-      return impl::get_error();
+    if (::connect(socket_id_, 
+                  reinterpret_cast<sockaddr*>(&address_v), 
+                  sizeof(address_v)) == impl::k_socket_error) {
+      return handle_error(xsstate::error, "TCPSocket::connect(). connect failed");
     }
-    return SocketState::done;
   }
 
-  // just in case
-  SocketState connect(const char* address, const char* port) {
-    disconnect();
+  // just in cases
+  void connect__(const char* address, const char* port) {
+    assert(is_good());
+    close();
 
     addrinfo *result = NULL, *ptr = NULL, hints = {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    auto iResult = getaddrinfo(address, port, &hints, &result);
-    if ( iResult != 0 ) { 
-      impl::print_error(); 
-      return SocketState::error;
+    if(::getaddrinfo(address, port, &hints, &result) != 0) {
+      return handle_error(xsstate::gaierror, "TCPSocket::connect__(). getaddrinfo(...) fail");
     }
 
-    for(ptr=result; ptr != NULL ;ptr=ptr->ai_next) {
+    for(ptr=result; ptr != NULL ; ptr=ptr->ai_next) {
       create();
-      if(::connect(socket_id_, ptr->ai_addr, (int)ptr->ai_addrlen) == -1) {
+      if(::connect(socket_id_, ptr->ai_addr, (int)ptr->ai_addrlen) == impl::k_socket_error) {
         close();
       }
       break;
     }
     ::freeaddrinfo(result);
-    return socket_id_ != impl::invalid_socket() ? SocketState::done : SocketState::error;
+    if(!is_valid()) {
+      return handle_error(xsstate::fail, "TCPSocket::connect__() unsuccess");
+    }
   }
 
-  void disconnect() { close(); }
-
-
-  // ----
+  // -----------------------------
   IPAddress remoteaddress() const { 
-    if (socket_id_ != impl::invalid_socket()) {
-      sockaddr_in address{};
-      impl::address_len_t size = sizeof(address);
-      if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
-        return IPAddress(ntohl(address.sin_addr.s_addr));
-      }
+    assert(is_valid());
+    auto out = IPAddress::none();
+    if (!is_valid()) {
+      return out;
     }
-    return IPAddress::none();
+    sockaddr_in address{};
+    impl::address_len_t size = sizeof(address);
+    if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size)) {
+      handle_error(xsstate::error, "TCPSocket::remoteaddress(). `getpeername` failed");
+    }
+    else {
+      out = IPAddress(ntohl(address.sin_addr.s_addr));
+    }
+    return out;
   }
   
-  unsigned short remoteport() const { 
-    if (socket_id_ != impl::invalid_socket()) {
-      sockaddr_in address{};
-      impl::address_len_t size = sizeof(address);
-      if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
-        return ntohs(address.sin_port);
-      }
+  portint_t remoteport() const { 
+    assert(is_valid());
+    portint_t out = 0;
+    if (!is_valid()) {
+      return out;
     }
-    return 0;
+    sockaddr_in address{};
+    impl::address_len_t size = sizeof(address);
+    if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size)) {
+      handle_error(xsstate::error, "TCPSocket::remoteport(). `getpeername` failed");
+    }
+    else{
+      out = ntohs(address.sin_port);
+    }
+    return out;
   }
 
-  unsigned short localport() const { 
-    if (socket_id_ != impl::invalid_socket()) {
-      sockaddr_in address{};
-      impl::address_len_t size = sizeof(address);
-      if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
-        return ntohs(address.sin_port);
-      }
+  portint_t localport() const { 
+    assert(is_valid());
+    portint_t out = 0;
+    if (!is_valid()) {
+      return out;
     }
-    return 0;
+    sockaddr_in address{};
+    impl::address_len_t size = sizeof(address);
+    if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size)) {
+      handle_error(xsstate::error, "TCPSocket::remoteport(). `getsockname` failed");
+    }
+    else{
+      out = ntohs(address.sin_port);
+    }
+    return out;
   }
 
   Mode mode_ = Mode::undef;
@@ -440,61 +503,60 @@ class TCPSocket : public TCPBase {
 
 
 // ------------------------------------------------------------
-class TCPListener : public TCPBase {
+class TCPListener : public SocketBase {
  public:
   
   TCPListener() = default;
 
-  SocketState listen(unsigned short port, IPAddress address = IPAddress{0, 0, 0, 0}) {
+  // param[in] nconn - number of connections for listenning
+  void listen(unsigned short port, int nconn = SOMAXCONN, IPAddress address = IPAddress{0, 0, 0, 0}) {
     close();
     create();
+    assert(is_good() && is_valid());
     
-    if (address.is_none()) { return SocketState::error; }
+    if (address.is_none()) { 
+      return handle_error(xsstate::fail, "TCPListner::listen. `address` := `none`");
+    }
 
     sockaddr_in addr = impl::create_address(address.to_int(), port);
-    if (::bind(socket_id_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == -1) {
-      printf("Failed to bind listener socket\n");
-      impl::print_error();
-      return SocketState::error;
+    if (::bind(socket_id_, 
+               reinterpret_cast<sockaddr*>(&addr),
+               sizeof(addr)) == impl::k_socket_error)
+    {
+      return handle_error(xsstate::error, "TCPListener::listen(). `bind` failed");
     }
 
-    if (::listen(socket_id_, SOMAXCONN) == -1) {
-      printf("Failed to bind listener socket\n");
-      return SocketState::error;
+    if (::listen(socket_id_, nconn) == impl::k_socket_error) {
+      return handle_error(xsstate::error, "TCPListener::listen(). `listen` failed");
     }
-    return SocketState::done;
   }
 
-  SocketState accept(TCPSocket& socket) {
-    if (socket_id_ == impl::invalid_socket()) {
-        printf("Failed to accept a new connection, the socket is not listening");
-        return SocketState::error;
-    }
+  void accept(TCPSocket& socket) {
+    assert(is_valid() && "TCPListener is invalid");
 
     sockaddr_in address{};
     impl::address_len_t length = sizeof(address);
     const impl::socket_t remote = ::accept(socket_id_, reinterpret_cast<sockaddr*>(&address), &length);
-
-    if (remote == impl::invalid_socket()) { return impl::get_error(); }
-
+    if (impl::is_invalid_socket(remote)) {
+      return handle_error(xsstate::error, "TCPListener::accept(). `accept` failed");
+    }
     socket.close();
-    socket.settings(remote);
-
-    return SocketState::done;
+    socket.setoptions(remote);
   }
 
-  unsigned int localport() const {
-    if (socket_id_ == impl::invalid_socket()) { 
-      return 0;   
-    }
+  portint_t localport() const {
+    assert(is_good() && is_valid());
+    unsigned int out = 0;
     sockaddr_in address{};
     impl::address_len_t size = sizeof(address);
-    if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) != -1) {
-        return ntohs(address.sin_port);
+    if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) == impl::k_socket_error) {
+      handle_error(xsstate::error, "TCPListener::localport(). `getsockname` gailed");
+    } else {
+      out = ntohs(address.sin_port);
     }
+    return out;
   }
 };
-
 } // namespace xmat
 
 

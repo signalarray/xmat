@@ -49,21 +49,21 @@ int sample_0() {
 
 int sample_1() {
   print(__PRETTY_FUNCTION__, 1);
-  print("COMMENT", 0, '-');
+  print("xmat::SocketError::make_msg()", 0, '-');
 
-  char buf[xmat::k_sock_buf_n] = "";
+  printvl(xmat::SocketError::make_msg(xmat::xsstate::good));
+  printvl(xmat::SocketError::make_msg(xmat::xsstate::good, "comment message"));
+  printvl(xmat::SocketError::make_msg(xmat::xsstate::fail, "fail message"));
+  printvl(xmat::SocketError::make_msg(xmat::xsstate::error, "fail message"));
 
-  xmat::TCPListener server;
-  if (server.listen(xmat::k_port) != xmat::SocketState::done) {
-    throw std::runtime_error("fail accept"); 
+  print(1, "print errors with code", 0, '-');
+#ifdef XMAT_USE_WINSOCKET
+  std::array<int, 3> errcodes = {WSAEMFILE, WSAENETDOWN, WSAEINVAL};
+  for (int n = 0; n < errcodes.size(); ++n) {
+    printvl(xmat::SocketError::make_msg(xmat::xsstate::error, "fail message", errcodes[n]));
   }
-  
-  xmat::TCPSocket socket;
-  if (server.accept(socket) != xmat::SocketState::done) { 
-    throw std::runtime_error("fail accept"); 
-  }
-  printv(socket.remoteaddress());
-
+#endif
+ 
   print(1, "FINISH", 1, '=');
   return 1;
 }
@@ -71,28 +71,32 @@ int sample_1() {
 
 int sample_2() {
   print(__PRETTY_FUNCTION__, 1);
-  print("raw socket server", 0, '-');
+  print("TCPListener, TCPSocket - connection only", 0, '-');
 
-
+  xmat::TCPListener server;
+  server.listen(xmat::k_xsport);
+  
+  xmat::TCPSocket socket;
+  server.accept(socket);
+  printv(socket.remoteaddress());
 
   print(1, "FINISH", 1, '=');
   return 1;
 }
-
 } // namespace
 
 
 int main() {
   print(4, __FILE__, 0, '-');
-  std::setlocale(LC_ALL, "ru-RU");
   
   try {
-    sample_1();
+    sample_2();
 
   }
   catch (std::exception& err) {
-    print(1, "exception in main()", 1, '+');
-    print_mv("exception message: >>", err.what());
+    print("\n+++++++++++++++++++++\n");
+    print_mv("exception in main: message: >>\n", err.what());
+    print("\n+++++++++++++++++++++\n");
     return EXIT_FAILURE;  
   }
   print(1, "FINISH" __FILE__, 1, '=');
