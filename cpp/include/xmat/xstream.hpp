@@ -14,6 +14,10 @@
 #include <utility>
 #include <new>
 
+// print
+#include <iostream>
+#include <iomanip>
+
 #include "xutil.hpp"
 #include "xmemory.hpp"
 
@@ -231,7 +235,6 @@ class OBBuf_ {
   void close() noexcept { is_open_ = false; }
 
   // access
-  // MemSource get_memsource() noexcept { return MemSource{data(), size()}; }
   MemorySource get_memsource() noexcept { return {data(), size()}; }
 
   const char* data() const { return storage_.data(); }
@@ -262,15 +265,17 @@ class IBBuf_ {
 
   // content make methods
   // --------------------
+  // provide space in buffer for write content bytes
   char* push_reserve(std::streamsize n) {
     size_t size_old = size_;
     size_t size_new = size_ + n;
     storage_.size_request(size_new); // throw exception
-    // ---- no exeption line
+    // ---- no exception line
     size_ = size_new;
     return storage_.data() + size_old;
   }
 
+  // allocate enougth space in buffer and write ptr to buffer
   IBBuf_& push(const char* ptr, std::streamsize n) {
     std::copy_n(ptr, n, push_reserve(n));
     return *this;
@@ -459,6 +464,7 @@ class StreamBlock {
 };
 
 
+// typename OBuff could be: std::oftream OR OBBuf_<typename MemSourceT>
 template<typename OBuff>
 struct BugOut_ {
   using buff_t = OBuff;
@@ -525,6 +531,7 @@ struct BugOut_ {
 
 
 // ----------------------------
+// IBBuf_ examples: IBBuf_<std::ifstream>
 template<typename IBuff>
 struct BugIn_ {
   using buff_t = IBuff;
@@ -660,35 +667,70 @@ struct BugIn_ {
 };
 
 
+
+// print
+// -----
+std::ostream& operator<<(std::ostream& os, const StreamHead& h) {
+  const size_t sw = 16;
+  os  << std::setw(sw) << "xint_size: "       << h.xint_size          << "\n"
+      << std::setw(sw) << "block_name_len: "  << h.max_block_name_len << "\n"
+      << std::setw(sw) << "type_name_len: "   << h.max_type_name_len  << "\n"
+      << std::setw(sw) << "max_ndim: "        << h.max_ndim           << "\n"
+      << std::setw(sw) << "total_size: "      << h.total_size         << "\n";
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const StreamBlock& b) {
+  const size_t sw = 16;
+  os  << std::setw(sw) << "name: "       << b.name_.data()      << "\n"
+      << std::setw(sw) << "typename: "   << b.typename_.data()  << "\n"
+      << std::setw(sw) << "shape: "; 
+  for (auto it : b.shape_) { os << it << ", "; }
+  os  << "\n"
+      << std::setw(sw) << "numel: "      << b.numel_            << "\n"
+      << std::setw(sw) << "typesize: "   << static_cast<int>(b.typesize_) << "\n"
+      << std::setw(sw) << "ndim: "       << static_cast<int>(b.ndim_)     << "\n"; 
+  return os;
+}
+
+template<typename IBufT>
+std::ostream& print(std::ostream& os, BugIn_<IBufT>& xin) {
+  os << "\n....\nhead\n....\n";
+  os << xin.head() << "\n";
+  int n = 0;
+  for(auto& item : xin) { 
+    os << "block N: " << n++ << "\n............\n";
+    os << item;
+  }
+  return os;
+}
+
+template<typename MemSourceT>
+std::ostream& print(std::ostream& os, BugOut_<OBBuf_<MemSourceT>>& xout) {
+  auto xout_ms = xout.buf().get_memsource();
+  xmat::BugInMS xin{std::move(xmat::IBBufMS{&xout_ms}.push_all())};
+  print(os, xin);
+  return os;
+}
+
+template<typename IBufT>
+std::ostream& operator<<(std::ostream& os, BugIn_<IBufT>& xin) {
+  return print(os, xin);
+}
+
+template<typename MemSourceT>
+std::ostream& operator<<(std::ostream& os, BugOut_<OBBuf_<MemSourceT>>& xout) {
+  return print(os, xout);
+}
+
 // aliases
 // -----------------------------------
-#if 0
 using OBBuf       = OBBuf_<bbuf_memsource_default>;      // default_constructable
-using OBBufGMS    = OBBuf_<GlobalMemAllocator<xbyte_t>>; // default_constructable
-using OBBufMS     = OBBuf_<MemSourceAlloc<xbyte_t>>;     // non_default_constructable
-
-using IBBuf       = IBBuf_<bbuf_memsource_default>;      // default_constructable
-using IBBufGMS    = IBBuf_<GlobalMemAllocator<xbyte_t>>; // default_constructable
-using IBBufMS     = IBBuf_<MemSourceAlloc<xbyte_t>>;     // non_default_constructable
-
-
-using BugOutFile  = BugOut_<std::ofstream>;              // non_default_constructable
-using BugOut      = BugOut_<OBBuf>;                      // default_constructable
-using BugOutGMS   = BugOut_<OBBufGMS>;                   // default_constructable
-using BugOutMS    = BugOut_<OBBufMS>;                    // non_default_constructable
-
-using BugInFile   = BugIn_<std::ifstream>;               // non_default_constructable
-using BugIn       = BugIn_<IBBuf>;                       // default_constructable
-using BugInGMS    = BugIn_<IBBufGMS>;                    // default_constructable
-using BugInMS     = BugIn_<IBBufMS>;                     // non_default_constructable
-#else
-
-using OBBuf       = OBBuf_<bbuf_memsource_default>;      // default_constructable
-using OBBufGMS    = OBBuf_<AllocatorMSGlobal<xbyte_t>>;     // default_constructable
+using OBBufGMS    = OBBuf_<AllocatorMSGlobal<xbyte_t>>;  // default_constructable
 using OBBufMS     = OBBuf_<AllocatorMSRef<xbyte_t>>;     // non_default_constructable
 
 using IBBuf       = IBBuf_<bbuf_memsource_default>;      // default_constructable
-using IBBufGMS    = IBBuf_<AllocatorMSGlobal<xbyte_t>>; // default_constructable
+using IBBufGMS    = IBBuf_<AllocatorMSGlobal<xbyte_t>>;  // default_constructable
 using IBBufMS     = IBBuf_<AllocatorMSRef<xbyte_t>>;     // non_default_constructable
 
 
@@ -701,7 +743,10 @@ using BugInFile   = BugIn_<std::ifstream>;               // non_default_construc
 using BugIn       = BugIn_<IBBuf>;                       // default_constructable
 using BugInGMS    = BugIn_<IBBufGMS>;                    // default_constructable
 using BugInMS     = BugIn_<IBBufMS>;                     // non_default_constructable
-#endif
-
-
 } // namespace xmat
+
+/*
+See:
+byte-swap:
+https://cplusplus.com/forum/general/27544/
+*/

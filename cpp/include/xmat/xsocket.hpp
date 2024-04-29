@@ -4,8 +4,8 @@
 #define XMAT_USE_WINSOCKET
 
 #undef UNICODE
-#define WIN32_LEAN_AND_MEAN
-
+#define WIN32_LEAN_AND_MEAN   // learn.microsoft.com/ru-ru/windows/win32/winsock/complete-client-code
+#define NOMINMAX              // stackoverflow.com/questions/22744262
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -37,12 +37,13 @@
 
 // project
 #include "xutil.hpp"
+#include "xstream.hpp"
 
 
 namespace xmat {
 
 using portint_t = unsigned short;
-constexpr size_t      k_xsbuff_size = 1024;
+constexpr size_t      k_xsbuf_size = 1024;
 constexpr portint_t   k_xsport = 27015;
 constexpr const char* k_xsport_str = "27015";
 
@@ -54,7 +55,7 @@ enum class xsstate : int {
   numel
 };
 
-constexpr char* xsstate_str[static_cast<int>(xsstate::numel)] = 
+constexpr const char* xsstate_str[static_cast<int>(xsstate::numel)] = 
   {"good", "error", "gaierror", "fail"};
 
 // socket functions namespace
@@ -63,22 +64,22 @@ namespace impl {
 #ifdef XMAT_USE_WINSOCKET
 using socket_t      = SOCKET;
 using address_len_t = int;
-using size_p        = int;
+using size_p        = int;  // in ::send(..., len_t len, ...)
 
-constexpr int         tcp_send_flags    = 0;
-constexpr auto        tcp_so_reuseaddr  = SO_REUSEADDR;
-constexpr socket_t    k_invalid_socket  = INVALID_SOCKET;
-constexpr int         k_socket_error    = SOCKET_ERROR;
+constexpr int         k_tcp_send_flags    = 0;
+constexpr auto        k_tcp_so_reuseaddr  = SO_REUSEADDR;
+constexpr socket_t    k_invalid_socket    = INVALID_SOCKET;
+constexpr int         k_socket_error      = SOCKET_ERROR;
 
 #else // unix
 using socket_t      = int;
 using address_len_t = socklen_t;
 using size_p        = size_t;
 
-constexpr int         tcp_send_flags    = MSG_NOSIGNAL;
-constexpr auto        tcp_so_reuseaddr  = SO_REUSEADDR | SO_REUSEPORT;s
-constexpr socket_t    k_invalid_socket  = -1;
-constexpr int         k_socket_error    = 1;
+constexpr int         k_tcp_send_flags    = MSG_NOSIGNAL;
+constexpr auto        k_tcp_so_reuseaddr  = SO_REUSEADDR | SO_REUSEPORT;
+constexpr socket_t    k_invalid_socket    = -1;
+constexpr int         k_socket_error      = 1;
 #endif
 
 
@@ -364,7 +365,7 @@ class SocketBase {
     const int yes = 1;
     if(::setsockopt(socket_id_,
                     SOL_SOCKET,
-                    impl::tcp_so_reuseaddr,
+                    impl::k_tcp_so_reuseaddr,
                     reinterpret_cast<const char*>(&yes), 
                     sizeof(yes)) == impl::k_socket_error) {
       return handle_error(xsstate::error, "xmat::SocketBase::setoptions(). "
@@ -445,8 +446,94 @@ class TCPSocket : public SocketBase {
     }
   }
 
-  // -----------------------------
-  IPAddress remoteaddress() const { 
+  size_t send(const void* buf, size_t len) {
+    assert(is_valid() && is_good());
+
+    size_t sent = 0;
+    if (!buf || !len) {
+      handle_error(xsstate::fail, "TCPSocket::send(...). !data || !size");
+      return sent;
+    }
+
+    for (sent = 0; sent < len;) {
+      auto result = ::send(socket_id_,
+                           static_cast<const char*>(buf) + sent,
+                           static_cast<impl::size_p>(len - sent),
+                           impl::k_tcp_send_flags);
+      if (result < 0) {
+        handle_error(xsstate::error, "TCPSocket::send() failed");
+      }
+      sent += static_cast<size_t>(result);
+    }
+    return sent;
+  }
+
+
+  size_t recv(void* buf, size_t len) {
+    assert(is_valid() && is_good());
+
+    size_t sent = 0;
+    if (!buf || !len) {
+      handle_error(xsstate::fail, "TCPSocket::send(...). !data || !size");
+      return sent;
+    }
+
+    auto received = ::recv(socket_id_, 
+                           static_cast<char*>(buf), 
+                           static_cast<impl::size_p>(len),
+                           impl::k_tcp_send_flags);
+    if (received <= 0) {
+      received = 0;
+      handle_error(xsstate::error, "TCPSocket::recv() failed");
+    }
+    return received;
+  }
+
+  // xmat::BugIn, xmat::BugOut send - recv
+  // -------------------------------------
+  template<typename MemSourceT>
+  void send(const BugOut_<OBBuf_<MemSourceT>>& xout) {
+    if(xout.buf().is_open()) {
+      return handle_error(xsstate::fail,
+        "TCPSocket::send(BugOut_ xout). xout.buf().is_open() := false. xout must be closed");
+    }
+    if(xout.head().total_size == 0) {
+      return handle_error(xsstate::fail,
+        "TCPSocket::send(BugOut_ xout). xout.head().total_size := 0. xout must be not empty");
+    }
+
+    send(xout.buf().data(), xout.buf().size());
+  }
+
+  template<typename MemSourceT>
+  void recv(BugIn_<IBBuf_<MemSourceT>>& xin) {
+    if(xin.buf().size() != 0) {
+      return handle_error(xsstate::fail,
+        "TCPSocket::recv(BugIn_ xin). xin.buf().size() :!= 0. xout must be empty");
+    }
+    
+    // -- try read Head
+    char* ptr_head = xin.buf().push_reserve(k_head_size);
+    if (recv(static_cast<void*>(ptr_head), static_cast<size_t>(k_head_size)) < k_head_size){
+      return handle_error(xsstate::fail, 
+        "TCPSocket::recv(BugIn_ xin). recv(header) < k_head_size. `head` has wrong len");
+    }
+    xin.scan_head();
+
+    // -- read Data. if fail -> throw Exception
+    assert(xin.head().total_size >= k_head_size);
+    size_t data_size = xin.head().total_size - k_head_size;
+    char* ptr_data = xin.buf().push_reserve(data_size);
+    if(recv(static_cast<void*>(ptr_data), data_size) < data_size) {
+      return handle_error(xsstate::fail, 
+        "TCPSocket::recv(BugIn_ xin). recv(data) < k_head_size. `data` has wrong len");
+    }
+    xin.buf().push_all();
+  }
+
+
+  // ------------------------------
+  IPAddress remoteaddress() const {
     assert(is_valid());
     auto out = IPAddress::none();
     if (!is_valid()) {
@@ -499,7 +586,6 @@ class TCPSocket : public SocketBase {
 
   Mode mode_ = Mode::undef;
 };
-
 
 
 // ------------------------------------------------------------
@@ -575,4 +661,3 @@ https://stackoverflow.com/questions/4181784/how-to-set-socket-timeout-in-c-when-
 https://stackoverflow.com/questions/2597608/c-socket-connection-timeout
 https://learn.microsoft.com/ru-ru/windows/win32/api/winsock/nf-winsock-setsockopt
 */
-

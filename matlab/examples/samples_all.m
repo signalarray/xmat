@@ -1,4 +1,4 @@
-function matlab_samples()
+function samples_all()
 clc
 clear
 close all

@@ -27,7 +27,7 @@ class has_cbegin_cend
   template <typename C> static two test(...);
 
 public:
-  static const bool value = sizeof(test<T>(0)) == sizeof(char) && !std::is_same_v<T, std::string>;
+  static const bool value = sizeof(test<T>(0)) == sizeof(char) && !std::is_same<T, std::string>::value;
 };
 
 

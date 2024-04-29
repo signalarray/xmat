@@ -2,6 +2,7 @@
 #include <exception>
 
 #include "../include/xmat/xsocket.hpp"
+#include "../include/xmat/xserial.hpp"
 #include "common.hpp"
 
 
@@ -83,14 +84,62 @@ int sample_2() {
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
+
+int sample_3() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("TCPListener, TCPSocket - send, receive", 0, '-');
+
+  char buf[xmat::k_xsbuf_size] = "";
+
+  print(1, "make a listener", 0, '-');
+  xmat::TCPListener server;
+  server.listen(xmat::k_xsport);
+  
+  print(1, "connect", 0, '-');
+  xmat::TCPSocket socket;
+  server.accept(socket);
+  printv(socket.remoteaddress());
+
+  print(1, "receive a message from the client", 0, '-');
+  size_t received = socket.recv(buf, sizeof(buf));
+  printv(buf);
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
+
+
+int sample_4() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("receive xmat::BugIn", 0, '-');
+
+  print(1, "make a listener", 0, '-');
+  xmat::TCPListener server;
+  server.listen(xmat::k_xsport);
+  
+  print(1, "connect", 0, '-');
+  xmat::TCPSocket socket;
+  server.accept(socket);
+  printv(socket.remoteaddress());
+
+  print(1, "receive in BugIn", 0, '-');
+  xmat::BugIn xin;
+  socket.recv(xin);
+  
+  printv(xin);
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
 } // namespace
 
 
 int main() {
-  print(4, __FILE__, 0, '-');
+  print(2, __FILE__, 0, '-');
   
   try {
-    sample_2();
+    sample_4();
 
   }
   catch (std::exception& err) {

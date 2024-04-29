@@ -868,6 +868,7 @@ struct NArrayInterface_ {
     return {ptr() + ravel().shape[0] * ravel().stride[0], ravel().stride[0]}; 
   }
   
+#if !defined _WIN32 || defined __MINGW32__
   // ND-begin
   template<size_t ND_ = ND, typename std::enable_if_t<(ND_ > 1), int> = 0>
   typename ViewForNarray<Derived>::viterator_t<ND-1, IntT>
@@ -913,6 +914,7 @@ struct NArrayInterface_ {
   drop(const std::array<size_t, Ndrop>& dims) noexcept {
     return {ptr(), ravel().template drop(dims)};
   }
+#endif
 
   // operations
   void enumerate() noexcept {
@@ -921,6 +923,7 @@ struct NArrayInterface_ {
       *it = x;
     }
   }
+
 
   // getters
   // -------
