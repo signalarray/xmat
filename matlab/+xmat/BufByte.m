@@ -1,52 +1,66 @@
-classdef StreamBytes < handle
+classdef BufByte< handle
     
   properties
     mode
-    byteorder
 
-    buff
-    cursor
+    buf = uint8(zeros(0, 1));
+    cursor = 0
+    byteorder = 'n'
   end
   
+
+  methods (Static)
+    function bbout = out()
+      bbout = xmat.BufByte('w');
+    end
+
+    function bbin = in()
+      bbin = xmat.BufByte('r');
+    end
+  end
+
+
   methods
-    function obj = StreamBytes(mode, buff, byteorder)
+    function obj = BufByte(mode)
       % Parameters:
       % -----------
       % mode: {'r', 'w'}
-      % buff: uint8[n x 1]
-      % byteorder: 
 
-      if nargin < 2 || isempty(buff)
-        buff = uint8(zeros(0, 1));
+      if ~any(mode == ["r", "w"])
+        error('xmat.BufByte.ctor(..). wrong `mode` value')
       end
-      if nargin < 3
-        byteorder = 'n';
-      end
-
-      if ~iscolumn(buff)
-        error('wrong shape of `buff` %s', mat2str(size(buff)));
-      end
-      if ~isa(buff, 'uint8')
-        error('wrong data type of buffer :%s', class(buff));
-      end      
-      
       obj.mode = mode;
-      obj.byteorder = byteorder;
+    end
 
-      obj.buff = buff;
+    % for deffered initialization
+    function obj = set_buffer(obj, buf)
+      if obj.mode ~= "r"
+        error('xmat.BufByte.set_buffer(). wrong mode');
+      end
+      check_buffer(buf);
+
+      obj.buf = buf;
       obj.cursor = 0;
     end
 
+    function obj = push_buffer(obj, buf)
+      if obj.mode ~= "r"
+        error('xmat.BufByte.set_buffer(). wrong mode');
+      end
+      check_buffer(buf);
 
+      obj.buf = [obj.buf; buf];
+    end    
+
+    % Bufxx interface methods
+    % -----------------------
     function close(obj)
-      fprintf('');
+      % just for interface
     end
-
-
+    
     function i = tell(obj)
       i = obj.cursor;
     end
-
 
     function status = seek(obj, offset, origin)
       % offset: matlab-style indexing (from 1 to N)
@@ -64,12 +78,12 @@ classdef StreamBytes < handle
       elseif origin == 0
         obj.cursor = obj.cursor + offset;
       elseif origin == 1
-        obj.cursor = length(obj.buff) - offset;
+        obj.cursor = length(obj.buf) - offset;
       else
         error('wrong origin');
       end
 
-      status = (obj.cursor >= 0 && obj.cursor <= length(obj.buff));
+      status = (obj.cursor >= 0 && obj.cursor <= length(obj.buf));
       if status 
         status = 0;
       else
@@ -80,17 +94,17 @@ classdef StreamBytes < handle
 
     
     function status = eof(obj)
-      status = obj.cursor == length(obj.buff);
+      status = obj.cursor == length(obj.buf);
     end
 
 
     function n = size(obj)
-      n = length(obj.buff);
+      n = length(obj.buf);
     end
 
 
     function [A, count] = read(obj, size, count, typename)
-      if obj.mode ~= 'r'
+      if obj.mode ~= "r"
         error('wrong mode for reading');
       end
       if nargin < 4
@@ -100,7 +114,7 @@ classdef StreamBytes < handle
       begin_ = obj.cursor;
       end_ = begin_ + size*count;
 
-      A = obj.buff(begin_+1:end_);
+      A = obj.buf(begin_+1:end_);
       if any(strcmp(typename, {'char', 'char*1'}))
         A = char(A);
       else
@@ -126,10 +140,19 @@ classdef StreamBytes < handle
       % Note: may be not the most optimal
       begin_ = obj.cursor;
       end_ = begin_ + length(data_);
-      obj.buff(begin_+1:end_, 1) = data_;
+      obj.buf(begin_+1:end_, 1) = data_;
       count = length(data_);
-      obj.cursor = length(obj.buff);
-      % assert(length(obj.buff) == end_);
+      obj.cursor = length(obj.buf);
     end    
+  end
+end
+
+
+function check_buffer(buf)
+  if ~iscolumn(buf)
+    error('wrong shape of `buff` %s', mat2str(size(buf)));
+  end
+  if ~isa(buf, 'uint8')
+    error('wrong data type of buffer :%s', class(buf));
   end
 end

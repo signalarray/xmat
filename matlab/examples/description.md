@@ -24,3 +24,12 @@ samples_supported_types.m
 temp_data_folder.m
   auto generated function. return the comman folder for data storage in the project.
 ```
+
+XHead
+XBlock
+TCPSocket
+BugIn
+BugOut
+BufByte
+BufFile
+XUtil

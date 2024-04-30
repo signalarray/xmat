@@ -1,4 +1,4 @@
-classdef ConnectionTCP < handle
+classdef TCPSocket < handle
   % works in only with blocking mode
     
   properties (Constant)
@@ -51,7 +51,7 @@ classdef ConnectionTCP < handle
 
 
   methods
-    function obj = ConnectionTCP(connection)
+    function obj = TCPSocket(connection)
       obj.socket = connection;
       obj.isserver = isa(obj.socket, 'tcpserver');
     end
@@ -139,7 +139,7 @@ classdef ConnectionTCP < handle
       % xin: xmat.Load.bytes
       %   xmatout.ostream: xmat.StreamBytes
 
-      if ~isa(xmatin, 'xmat.Input') 
+      if ~isa(xmatin, 'xmat.Input')
         error('xout class');
       end
       if xmatin.h.total_size == 0
@@ -158,11 +158,11 @@ classdef ConnectionTCP < handle
       count = 0;
       while obj.socket.NumBytesAvailable
         xin = xmat.Input.from_bytes([]);
-        hbuff = uint8(read(obj.socket, xmat.Header.k_SIZEB, 'char'))';
+        hbuff = uint8(read(obj.socket, xmat.XUtil.k_head_size, 'char'))';
         xin.istream.buff = [xin.istream.buff; hbuff];
         xin.scan_header();
         
-        dbuff = uint8(read(obj.socket, xin.h.total_size-xmat.Header.k_SIZEB, 'char'))';
+        dbuff = uint8(read(obj.socket, xin.h.total_size-xmat.XUtil.k_head_size, 'char'))';
         xin.istream.buff = [xin.istream.buff; dbuff];
         xin.scan_data();
         obj.content{end+1} = xin;

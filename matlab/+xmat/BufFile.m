@@ -1,24 +1,37 @@
-classdef StreamFile < handle
-
+classdef BufFile < handle
 
   properties
-    mode    
     filename
-    fid
-    byteorder
-    size_ = 0
+    mode
+    
+    fid = -1;
+    byteorder = 'n'
   end
+
   
+  methods (Static)
+    function bfout = out(filename)
+      bfout = xmat.BufFile(filename, 'w');
+    end
+
+    function bfin = in(filename)
+      bfin = xmat.BufFile(filename, 'r');
+    end
+  end
+
 
   methods
-    function obj = StreamFile(filename, mode, byteorder)
-      if nargin < 3 || isempty(byteorder)
-        byteorder = 'n';
+    function obj = BufFile(filename, mode)
+      % filename: str
+      % mode: {'r', 'w'}
+
+      if ~any(mode == ["r", "w"])
+        error('xmat.BufByte.ctor(..). wrong `mode` value')
       end
-      obj.mode = mode;      
+
       obj.filename = filename;
+      obj.mode = mode;
       obj.fid = fopen(obj.filename, obj.mode);
-      obj.byteorder = byteorder;
     end
 
 
@@ -79,7 +92,6 @@ classdef StreamFile < handle
         data = typecast(A, 'uint8');
         count = fwrite(obj.fid, data, 'uint8', 0, obj.byteorder);
       end
-      obj.size_ = max(obj.size_, ftell(obj.fid));
     end
   end
 end

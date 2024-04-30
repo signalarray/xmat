@@ -667,7 +667,6 @@ struct BugIn_ {
 };
 
 
-
 // print
 // -----
 std::ostream& operator<<(std::ostream& os, const StreamHead& h) {
