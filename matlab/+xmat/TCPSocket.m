@@ -1,33 +1,66 @@
-classdef TCPSocket < handle
-  % works in only with blocking mode
+classdef TCPSocket_ < handle
     
-  properties (Constant)
-
-  end
-
-
   properties
     socket
+    % socket.UserData - packets received
+
     isserver
 
-    content = {};
-    state = 'run'; % {'run', 'stop'}
+    content__ = {};   % dont modify it manually. use method `pop`
+    state = 'run';    % {'run', 'stop'}
   end
   
 
   methods (Static)
-    function xmattcp = make(mode, address, port)
+    function tcpsock = server(address, port, varargin)
+      % Parameters
+      % ----------
+      % address: {string/char, []} OR int
+      %   if {string/char, []} -> used as address. if [] OR '' -> address := '::'
+      %   if int, address will be used as port. (but it's the only argument)
+      %
+      % port: int
+      % 
+      % varargin: pair<string, value>
+      %   optional parameters for `tcpserver` constructor
+      % 
+      % Examples:
+      % ---------
+      % server = xmat.TCPSocket.server('0.0.0.0', 5001);
+      % server = xmat.TCPSocket.server('::', 5001)
+      % server = xmat.TCPSocket.server(5001);
+      % server = xmat.TCPSocket.server([], 5001, 'Timeout', 20, 'EnableTransferDelay', false);
+     
+      if nargin == 1
+        if ~isnumeric(address)
+          error('`address` argument must be a nummeric when used as `port`');
+        else
+          port = address;
+          address = '::';
+        end
+      end
+      tspsock = xmat.TCPSocket_('server', address, port, varargin{:});
+    end
+
+    function tcpsock = client(address, port, varargin)
+      % just for symmetry with xmat.TCPSocket.server(...)
+      % Parameters:
+      % address: string
+      %   use "localhost" with local server
+
+      tcpsock = xmat.TCPSocket_('client', address, port, varargin{:});
+    end
+  end
+
+
+  methods
+    function obj = TCPSocket_(mode, address, port, varargin)
       % Parameters:
       % -----------
       % mode: {'server', 'client'}
       % address: 
       %   if mode == server default '::'
       % port:
-      %
-      % Return: 
-      % -------
-      % ConnectionTCP
-      %
       
       if isempty(mode)
         mode = 'server';
@@ -38,20 +71,14 @@ classdef TCPSocket < handle
       end
 
       if strcmp(mode, 'server')
-        connection = tcpserver(address, port);
+        connection = tcpserver(address, port, varargin{:});
       elseif strcmp(mode, 'client')
-        connection = tcpclient(address, port);
+        connection = tcpclient(address, port, varargin{:});
       else 
         error('wrong `mode` value');
       end
 
-      xmattcp = xmat.ConnectionTCP(connection);
-    end
-  end
-
-
-  methods
-    function obj = TCPSocket(connection)
+      % ---------------------
       obj.socket = connection;
       obj.isserver = isa(obj.socket, 'tcpserver');
     end
@@ -74,86 +101,72 @@ classdef TCPSocket < handle
     end
 
 
-    function count = wait(obj)
-      % return controll when has elements in stack
-      if ~isempty(obj.content)
-        count = length(obj.content);
-        return
-      end
-
-      s_ = obj.socket;
-      while ~s_.NumBytesAvailable
-        pause(0.01);
-      end
-
-      count = obj.read_buffer();
-    end
-
-
     function xm = pop(obj)
-      if isempty(obj.content)
-        xm = [];
-        return
-      end
-      xm = obj.content{1};
-      obj.content(1) = [];
+      
     end
 
-    function xin_bytes = resv(obj)
-      % Returns
-      % -------
-      % xmat.Input<StreamBytes>
 
-      obj.wait();
-      xin_bytes = obj.pop();
-    end
-
-    function send(obj, xmatout)
+    function send(obj, bugout)
       % Parameters
       % ----------
-      % xmatout: xmat.Output.bytes
-      %   xmatout.ostream: xmat.StreamBytes
+      % bugout: xmat.BugOut.bytes
+      %   bugout.obuf: xmat.BufByte
       
-      if ~isa(xmatout, 'xmat.Output') 
-        error('wrong xout class: %s', class(xmatout));
+      if ~isa(bugout, 'xmat.BugOut') 
+        error('xmat.TCPSocket.send(..). wrong type: %s', class(bugout));
       end
-      if xmatout.h.total_size == 0 
-        error('xmatout.h.total_size ~= 0 ::%d', xmatout.h.total_size);
+      if bugout.h.total_size == 0 
+        error('xmat.TCPSocket.send(..). bugout.h.total_size ~= 0 ::%d', bugout.h.total_size);
       end
-      if ~isa(xmatout.ostream, 'xmat.StreamBytes')
-        error('wrong xmatout.ostream class: %s', class(xmatout.ostream));
+      if ~isa(bugout.obuf, 'xmat.BufByte')
+        error('xmat.TCPSocket.send(..). wrong type bugout.obuf: %s', class(bugout.ostream));
       end
-      if ~isa(xmatout.ostream.buff, 'uint8')
-        error('wrong xmatout.ostream.buff class: %s', class(xmatout.ostream.buff));
+      if ~isa(bugout.obuf.buf, 'uint8')
+        error('xmat.TCPSocket.send(..). wrong type bugout.obuf.buf: %s', class(bugout.ostream.buff));
       end
-      if ~xmatout.isclosed
-        error('xout is`nt closed');
+      if bugout.is_open
+        error('bugout must be closed');
       end
       
-      write(obj.socket, xmatout.ostream.buff, 'uint8');
+      write(obj.socket, bugout.ostream.buff, 'uint8');
     end
 
-    function resend(obj, xmatin)
-      % Parameters
-      % ----------
-      % xin: xmat.Load.bytes
-      %   xmatout.ostream: xmat.StreamBytes
 
-      if ~isa(xmatin, 'xmat.Input')
-        error('xout class');
-      end
-      if xmatin.h.total_size == 0
-        error('xmatout.h.total_size ~= 0 ');
-      end
-      if ~isa(xmatin.istream, 'xmat.StreamBytes')
-        error('wrong xmatout.ostream class: %s', class(xmatin.istream));
-      end
-      write(obj.socket, xmatin.istream.buff, 'uint8');
+    function xin = recv(obj)
+      xin = xmat.BugIn();
+
+      % read header
+      hbuf = uint8(read(obj.socket, xmat.XUtil.k_head_size, 'char'))';
+      xin.push_buffer(hbuf);
+      xin.scan_header();
+
+      dbuff = uint8(read(obj.socket, xin.head.total_size-xmat.XUtil.k_head_size, 'char'))';
+      xin.push_buffer(dbuff);
+      xin.scan_data();
+    end
+
+
+    function recv_push(obj)
+      xin = obj.recv();
+      obj.content__{end + 1} = xin;
     end
 
 
     % private methods
     % ---------------
+    function callback(obj, mode)
+      % mode: logical
+      %  if mode := true    callback is on
+      %  if mode := false   callback is off
+
+      if mode
+        configureCallback(obj.socket, "byte", xmat.XUtil.k_head_size, @obj.recv_push);
+      else
+        configureCallback(t, "off");
+      end
+    end
+
+
     function count = read_buffer(obj)
       count = 0;
       while obj.socket.NumBytesAvailable

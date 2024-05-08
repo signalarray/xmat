@@ -132,6 +132,25 @@ int sample_4() {
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
+int sample_5() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("TCPGroup: add, remove", 0, '-');
+
+  print(1, "make a listener", 0, '-');
+  xmat::TCPGroup_<> tcp{};
+  auto& sock0 = tcp.socket();
+  auto& sock1 = tcp.socket();
+  auto& sock2 = tcp.socket();
+
+  printv(tcp.nsock());
+  for (int n = 0, N = tcp.nsock(); n < N; ++n) {
+    printv(tcp.socket(n).handle());
+  }
+  
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
 } // namespace
 
 
@@ -139,7 +158,7 @@ int main() {
   print(2, __FILE__, 0, '-');
   
   try {
-    sample_4();
+    sample_5();
 
   }
   catch (std::exception& err) {

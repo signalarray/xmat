@@ -1,3 +1,13 @@
+TODO
+====
+- matlab. TCPSocket support
+- cpp TCPSocket non-blocking mode
+
+- change data format implementation
+- add big-little endian support
+- check .cpp BugOut<file>
+
+
 XMAT binary format
 =======================
 

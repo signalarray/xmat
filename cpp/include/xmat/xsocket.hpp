@@ -88,6 +88,12 @@ inline int close(socket_t socket) noexcept { return closesocket(socket); }
 
 inline void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
 
+// param[out] int: k_socket_error if error
+inline int set_blocking(socket_t socket, bool value) {
+  u_long blocking = value ? 0 : 1;
+  return ioctlsocket(value, static_cast<long>(FIONBIO), &blocking);
+}
+
 // error's stuff
 // -------------
 inline int err_get_code() { return WSAGetLastError(); }
@@ -114,6 +120,17 @@ inline std::string err_get_str(int errcode) {
 inline int close(socket_t socket) noexcept { return ::close(socket); }
 
 inline void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
+
+// param[out] int: k_socket_error if error
+void set_blocking(SocketHandle sock, bool value) {
+  int status = fcntl(sock, F_GETFL);
+  if (value) {
+    return fcntl(sock, F_SETFL, status & ~O_NONBLOCK);
+  }
+  else {
+    return fcntl(sock, F_SETFL, status | O_NONBLOCK);
+  }
+}
 
 // error's stuff
 // -------------
@@ -297,30 +314,55 @@ std::ostream& operator<<(std::ostream& stream, const IPAddress& address) {
 
 
 // ------------------------------------------------------------
-class SocketBase {
+class Socket {
  public:
-  virtual ~SocketBase() { 
+  enum class Type { listener, socket, undef, numel };
+
+  virtual ~Socket() { 
     if (!is_valid()) { return; }
     auto resout = impl::close(socket_id_);
 #ifndef NDEBUG
     if (resout == impl::k_socket_error) {
-      std::printf("xmat::SocketBase::destructor(): "
+      std::printf("xmat::Socket::destructor(): "
                   "impl::close(socket_id_) -> != 0\n message: \n");
       std::printf(impl::err_get_str().c_str());
     }
 #endif
   }
 
-  SocketBase(const SocketBase&) = delete;
+  Socket(const Socket&) = delete;
 
-  SocketBase& operator=(const SocketBase&) = delete;
+  Socket& operator=(const Socket&) = delete;
 
-  SocketBase(SocketBase&& other) noexcept { std::swap(*this, other); }
+  Socket(Socket&& other) noexcept { swap(*this, other); }
   
-  SocketBase& operator=(SocketBase&& other) {
-    SocketBase tmp(std::move(other));
-    std::swap(*this, tmp);
+  Socket& operator=(Socket&& other) noexcept {
+    Socket tmp{std::move(other)};
+    swap(*this, tmp);
     return *this;
+  }
+ 
+  friend void swap(Socket& lhs, Socket& rhs) noexcept {
+    std::swap(lhs.socket_id_,       rhs.socket_id_);
+    std::swap(lhs.is_blocking,      rhs.is_blocking);
+    std::swap(lhs.state_,           rhs.state_);
+    std::swap(lhs.flag_exceptions_, rhs.flag_exceptions_);
+    std::swap(lhs.type_,            rhs.type_);
+  }
+
+  bool operator==(const Socket& other) { return socket_id_ == other.socket_id_; }
+
+  bool operator<(const Socket& other) { return socket_id_ < other.socket_id_; }
+
+
+  bool blocking() const noexcept { return is_blocking; }
+
+  void blocking(bool block) noexcept {
+    assert(is_valid() && "must be a valid value socket");
+    if (impl::set_blocking(socket_id_, block) == impl::k_socket_error) {
+      return handle_error(xsstate::error, "xmat::Socket::blocking(bool). impl::set_blocking failed");
+    }
+    is_blocking = block;
   }
 
   // state and error handling
@@ -346,14 +388,14 @@ class SocketBase {
   }
 
  protected:
-  SocketBase() { SocketStartup::init(); }
+  Socket(Type type = Type::undef) : type_{type} { SocketStartup::init(); }
 
   void create() {
     assert(!is_valid() && "xmat::Socket::create(...)"
                           "current state must be invalid. call `close` before");
     const impl::socket_t sock = ::socket(PF_INET, SOCK_STREAM, 0);
     if (impl::is_invalid_socket(sock)) {
-      return handle_error(xsstate::error, "SocketBase::create(). returns invalid socket");
+      return handle_error(xsstate::error, "Socket::create(). returns invalid socket");
     }
     setoptions(sock);
   }
@@ -368,7 +410,7 @@ class SocketBase {
                     impl::k_tcp_so_reuseaddr,
                     reinterpret_cast<const char*>(&yes), 
                     sizeof(yes)) == impl::k_socket_error) {
-      return handle_error(xsstate::error, "xmat::SocketBase::setoptions(). "
+      return handle_error(xsstate::error, "xmat::Socket::setoptions(). "
                                           "setsockopt(.., impl::tcp_so_reuseaddr, ..)");
     }
     if (::setsockopt(socket_id_,
@@ -376,11 +418,12 @@ class SocketBase {
                      TCP_NODELAY,
                      reinterpret_cast<const char*>(&yes), 
                      sizeof(yes)) == impl::k_socket_error) {
-      return handle_error(xsstate::error, "xmat::SocketBase::setoptions(). "
+      return handle_error(xsstate::error, "xmat::Socket::setoptions(). "
                                           "setsockopt(.., TCP_NODELAY, ..)");
     }
   }
 
+ public:
   void close() {
     if (!is_valid()) { return; }
     if(impl::close(socket_id_) == impl::k_socket_error ) {
@@ -389,21 +432,32 @@ class SocketBase {
     socket_id_ = impl::k_invalid_socket;
   }
 
+  // get / set
+  Type type() const noexcept { return type_; }
+
+  impl::socket_t handle() const noexcept { return socket_id_; }
+
+ private:
+  void move(const Socket& other) {
+    // just instead walking trougth all members:
+    std::memcpy(reinterpret_cast<void*>(this), reinterpret_cast<const void*>(&other), sizeof(other));
+  }
+
  public:
   impl::socket_t socket_id_ = impl::k_invalid_socket;
-  mutable xsstate state_ = xsstate::good;
-  bool flag_exceptions_ = true;
+  bool is_blocking          = true;
+  mutable xsstate state_    = xsstate::good;
+  bool flag_exceptions_     = true;
+  Type type_                = Type::undef;
 };
 
 
 // ------------------------------------------------------------
-class TCPSocket : public SocketBase {
+class TCPSocket : public Socket {
  public:
-  enum class Mode { client, connection, undef };
-
   friend class TCPListener;
 
-  TCPSocket() = default;
+  TCPSocket() : Socket{Socket::Type::socket} {}
 
   void connect(IPAddress address, unsigned int port) {
     assert(is_good());
@@ -583,16 +637,14 @@ class TCPSocket : public SocketBase {
     }
     return out;
   }
-
-  Mode mode_ = Mode::undef;
 };
 
 
 // ------------------------------------------------------------
-class TCPListener : public SocketBase {
+class TCPListener : public Socket {
  public:
   
-  TCPListener() = default;
+  TCPListener() : Socket{Socket::Type::listener} {}
 
   // param[in] nconn - number of connections for listenning
   void listen(unsigned short port, int nconn = SOMAXCONN, IPAddress address = IPAddress{0, 0, 0, 0}) {
@@ -643,6 +695,201 @@ class TCPListener : public SocketBase {
     return out;
   }
 };
+
+
+class Selector {
+ public:
+  virtual ~Selector() { }
+
+  Selector() { clear(); }
+
+  void add(Socket& socket) {
+    assert(socket.is_valid());
+    if (!socket.is_valid()) {
+      return;
+    }
+#ifdef XMAT_USE_WINSOCKET
+    if(size_ >= FD_SETSIZE) {
+      return handle_error(xsstate::fail, "xmat::Selector::add(..). size >= FD_SETSIZE.\n"
+                                          "The socket can't be added to the selector because the "
+                                          "selector is full. This is a limitation of your operating "
+                                          "system's FD_SETSIZE setting. See: FD_SETSIZE comment");
+    }
+    if (FD_ISSET(socket.handle(), &all_)) { // why isn't in crossplatform code?
+      return;
+    }
+#else
+    if (socket.handle() >= FD_SETSIZE) {
+        return handle_error(xsstate::fail, "xmat::Selector::add(..). socket.handle() >= FD_SETSIZE\n"
+                                           "The socket can't be added to the selector because its "
+                                           "ID is too high. This is a limitation of your operating "
+                                           "system's FD_SETSIZE setting. See: FD_SETSIZE comment");
+    }
+#endif
+    ++size_;
+    max_socket_id_ = std::max(max_socket_id_, static_cast<int>(socket.handle()));
+    FD_SET(socket.handle(), &all_);
+  }
+
+
+  void remove(Socket& socket) {
+    assert(socket.is_valid());
+    if (!socket.is_valid()) {
+      return;
+    }
+#ifdef XMAT_USE_WINSOCKET
+    if (!FD_ISSET(socket.handle(), &all_)) {
+      return;
+    }
+    --size_;
+#else
+    if (socket.handle() >= FD_SETSIZE) {
+      return;
+    }
+#endif
+    FD_CLR(socket.handle(), &all_);
+    FD_CLR(socket.handle(), &ready_);
+  }
+
+
+  void clear() {
+    FD_ZERO(&all_);
+    FD_ZERO(&ready_);
+
+    max_socket_id_ = 0;
+    size_ = 0;
+  }
+
+
+  int wait(double timeout) {
+    double ipart = 0.0;
+    double fpart = std::modf(timeout, &ipart);
+
+    timeval time;
+    time.tv_sec  = static_cast<long>(ipart);
+    time.tv_usec = static_cast<int>(fpart * 1000000.0);
+
+    ready_ = all_;
+
+    // Wait until one of the sockets is ready for reading, or timeout is reached
+    // The first parameter is ignored on Windows
+    int count = ::select(max_socket_id_ + 1, &ready_, NULL, NULL, timeout != 0.0 ? &time : NULL);
+    return count;
+  }
+
+
+  bool isready(Socket& socket) const {
+    assert(socket.is_valid());
+    if (!socket.is_valid()) { 
+      return false;
+    }
+#ifndef XMAT_USE_WINSOCKET
+    if (handle >= FD_SETSIZE) {
+      return false;
+    }
+#endif
+    return FD_ISSET(socket.handle(), &ready_) != 0;
+  }
+
+
+  bool exceptions() const noexcept { return flag_exceptions_; }
+
+  void exceptions(bool value) noexcept { flag_exceptions_ = value; }
+
+  void handle_error(xsstate state, const char* comment = nullptr) const {
+    assert(state != xsstate::good && "state isn't supposed to be an `ok`");
+    state_ = state;
+    if (exceptions()) { throw SocketError(state, comment); }
+  }
+
+ private:
+  fd_set all_;
+  fd_set ready_;
+  int max_socket_id_ = 0; // for select(nfds, ...) arg. used for only UNIX.
+                          // in Windows: only for compatibility with Berkeley sockets.
+  int size_ = 0;
+
+  mutable xsstate state_ = xsstate::good;
+  bool flag_exceptions_  = true;
+};
+
+
+template<size_t Nsock = 8, size_t Nlis = 2>
+class TCPGroup_ {
+ public:
+  TCPGroup_() {}
+
+  TCPListener& listener() {
+    listeners_.at(n_lis_++) = TCPListener{};
+    return listeners_.at(n_lis_-1);
+  }
+
+  // TCPListener& listener(unsigned short port, int nconn = SOMAXCONN, IPAddress address = IPAddress{0, 0, 0, 0}) { }
+
+  TCPSocket& socket() {
+    if (n_sock_ >= n_sock_) { throw SocketError(xsstate::fail, "xmat::TCPGroup::socket(). out_of_range"); }
+    sockets_.at(n_sock_++) = TCPSocket{};
+    return sockets_.at(n_sock_-1);
+  }
+
+  // TCPSocket& socket(IPAddress address, unsigned int port) { }
+ 
+  // TCPSocket& socket(IPAddress address, unsigned int port, double timeout) { }
+
+  // selector
+  void wait() {
+
+  }
+
+  template<typename T>
+  friend void support_remove_element(T* begin, T*end, const T* element) {
+    auto it = std::find_if(begin, end, 
+                           [idx = element->handle()] (const T& ls) { return ls == idx; });
+    if (it == end) {
+      throw SocketError(xsstate::fail, "xmat::TCPGroup::remove(sock). socket isn`t in this group");
+    }
+    std::copy(it+1, end, it);
+  }
+
+  void remove(Socket& socket) {
+    if (socket.type() == Socket::Type::undef) {
+      throw SocketError(xsstate::fail, "xmat::TCPGroup::remove(..). socket.type() == Socket::Type::undef");
+    }
+
+    if (socket.type == Socket::Type::listener) {
+      support_remove_element(listeners_.being(), listeners_.end(), &socket);
+      --n_lis_;
+    } 
+    else {
+      support_remove_element(sockets_.being(), sockets_.end(), &socket);
+      --n_sock_;
+    }
+    selector_.remove(socket);
+  }
+
+
+  // set / get
+  bool exceptions() const noexcept { return selector_.exceptions(); }
+
+  void exceptions(bool value) noexcept { selector_.exceptions(value); }
+
+  TCPListener& listener(size_t idx) { return listeners_[idx]; }
+
+  TCPSocket& socket(size_t idx) { return sockets_[idx]; }
+
+  size_t nlis() const noexcept { return n_lis_; }
+
+  size_t nsock() const noexcept { return n_sock_; }
+
+ private:
+  std::array<TCPListener, Nlis> listeners_;
+  std::array<TCPSocket, Nsock> sockets_;
+  size_t n_lis_ = 0;
+  size_t n_sock_ = 0;
+
+  Selector selector_;
+};
+
 } // namespace xmat
 
 
