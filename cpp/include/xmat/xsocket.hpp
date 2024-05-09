@@ -33,7 +33,10 @@
 // cpp-lang
 #include <sstream>
 #include <utility>
-
+#include <cmath>
+#include <limits>   // for namespace time:
+#include <chrono>
+#include <thread>   // for this_thread::yield, sleep_for
 
 // project
 #include "xutil.hpp"
@@ -79,7 +82,7 @@ using size_p        = size_t;
 constexpr int         k_tcp_send_flags    = MSG_NOSIGNAL;
 constexpr auto        k_tcp_so_reuseaddr  = SO_REUSEADDR | SO_REUSEPORT;
 constexpr socket_t    k_invalid_socket    = -1;
-constexpr int         k_socket_error      = 1;
+constexpr int         k_socket_error      = -1;
 #endif
 
 
@@ -89,9 +92,9 @@ inline int close(socket_t socket) noexcept { return closesocket(socket); }
 inline void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
 
 // param[out] int: k_socket_error if error
-inline int set_blocking(socket_t socket, bool value) {
-  u_long blocking = value ? 0 : 1;
-  return ioctlsocket(value, static_cast<long>(FIONBIO), &blocking);
+inline int set_blocking(socket_t socket, bool block) {
+  u_long blocking = block ? 0 : 1;
+  return ioctlsocket(socket, static_cast<long>(FIONBIO), &blocking);
 }
 
 // error's stuff
@@ -116,15 +119,20 @@ inline std::string err_get_str(int errcode) {
   return msg;
 }
 
+bool non_blocking_in_progress() {
+  auto errcode = err_get_code();
+  return errcode == WSAEWOULDBLOCK || errcode == WSAEALREADY;
+}
+
 #else
 inline int close(socket_t socket) noexcept { return ::close(socket); }
 
 inline void set_timeout(socket_t socket, size_t us) { /*TODO*/ }
 
 // param[out] int: k_socket_error if error
-void set_blocking(SocketHandle sock, bool value) {
+void set_blocking(SocketHandle sock, bool block) {
   int status = fcntl(sock, F_GETFL);
-  if (value) {
+  if (block) {
     return fcntl(sock, F_SETFL, status & ~O_NONBLOCK);
   }
   else {
@@ -138,6 +146,12 @@ inline int err_get_code() { return errno; }
 
 inline std::string err_get_str(int errcode) {
   return std::string(::strerror(errcode));
+}
+
+
+bool non_blocking_in_progress() {
+  auto errcode = err_get_code();
+  return errcode == EWOULDBLOCK;
 }
 
 #endif
@@ -160,7 +174,24 @@ inline bool is_invalid_socket(socket_t sock) { return sock == k_invalid_socket; 
 inline std::string err_get_str() { return err_get_str(err_get_code()); }
 
 inline void err_print(int errcode) { std::printf(err_get_str().c_str()); }
+
+timeval double2timeval(double timeout) {
+  double ipart = 0.0;
+  double fpart = std::modf(timeout, &ipart);
+
+  timeval time;
+  time.tv_sec  = static_cast<long>(ipart);
+  time.tv_usec = static_cast<int>(fpart * 1000000.0);
+  return time;
+}
 } // namespace impl -----
+
+namespace time {
+  double  nan() noexcept { return std::numeric_limits<double>::quiet_NaN(); }
+  double  inf() noexcept { return std::numeric_limits<double>::infinity(); }
+  bool    isnan(double t) noexcept { return std::isnan(t); }
+  bool    isinf(double t) noexcept { return !std::isfinite(t); }
+}
 
 
 class SocketError : public std::runtime_error {
@@ -174,7 +205,7 @@ class SocketError : public std::runtime_error {
         << "xmat::xsstate-name := " << xsstate_str[static_cast<unsigned int>(state)] << "\n";
 
     if (comment) { 
-      oss << "comment: " << comment << "\n"; 
+      oss << "comment: " << comment << "\n\n"; 
     }
     
     if (state == xsstate::error) { // print socket-system error msg
@@ -182,7 +213,7 @@ class SocketError : public std::runtime_error {
         sys_error_code = impl::err_get_code(); 
       }
       oss << "state := error. \n"
-          << "sys-code: =" << sys_error_code << "\n"
+          << "sys-code: = " << sys_error_code << "\n"
           << "sys-error-msg: " << impl::err_get_str(sys_error_code) << "\n";
     }
     else if (state == xsstate::gaierror) { // getaddrinfo spesific errors
@@ -190,7 +221,7 @@ class SocketError : public std::runtime_error {
         sys_error_code = impl::err_get_code();
       }
       oss << "state := gaierror. "
-          << "code: =" << sys_error_code << "\n"
+          << "code: = " << sys_error_code << "\n"
           << "sys-error-msg: " << gai_strerror(sys_error_code) << "\n";
     }
     else if (state == xsstate::fail) { // print Socket-class-logic error(fail) msg
@@ -304,9 +335,9 @@ struct IPAddress {
   std::uint32_t address_ = INADDR_NONE;   // stored in network order
 };
 
-bool operator==(const IPAddress& lhs, const IPAddress& rhs) {
-    return lhs.address_ < rhs.address_;
-}
+bool operator==(const IPAddress& lhs, const IPAddress& rhs) { return lhs.address_ == rhs.address_; }
+
+bool operator!=(const IPAddress& lhs, const IPAddress& rhs) {  return !(lhs == rhs); }
 
 std::ostream& operator<<(std::ostream& stream, const IPAddress& address) { 
   return stream << address.to_string();
@@ -341,10 +372,11 @@ class Socket {
     swap(*this, tmp);
     return *this;
   }
- 
+
   friend void swap(Socket& lhs, Socket& rhs) noexcept {
     std::swap(lhs.socket_id_,       rhs.socket_id_);
-    std::swap(lhs.is_blocking,      rhs.is_blocking);
+    std::swap(lhs.is_blocking_,     rhs.is_blocking_);
+    std::swap(lhs.is_open_,         rhs.is_open_);
     std::swap(lhs.state_,           rhs.state_);
     std::swap(lhs.flag_exceptions_, rhs.flag_exceptions_);
     std::swap(lhs.type_,            rhs.type_);
@@ -355,14 +387,14 @@ class Socket {
   bool operator<(const Socket& other) { return socket_id_ < other.socket_id_; }
 
 
-  bool blocking() const noexcept { return is_blocking; }
+  bool blocking() const noexcept { return is_blocking_; }
 
-  void blocking(bool block) noexcept {
+  void blocking(bool block) {
     assert(is_valid() && "must be a valid value socket");
     if (impl::set_blocking(socket_id_, block) == impl::k_socket_error) {
       return handle_error(xsstate::error, "xmat::Socket::blocking(bool). impl::set_blocking failed");
     }
-    is_blocking = block;
+    is_blocking_ = block;
   }
 
   // state and error handling
@@ -378,6 +410,19 @@ class Socket {
   void exceptions(bool val) noexcept { flag_exceptions_ = val; }
 
   bool exceptions() const noexcept { return flag_exceptions_; }
+
+  // true if:
+  // if Listener: listen was called
+  // if Socket::client: connect was called
+  // if Socket::connection: accept was called for it
+  // false if:
+  // close was called
+  bool is_open() const noexcept { assert(is_valid() || (!is_valid() && !is_open_)); return is_open_; }
+
+  Type type() const noexcept { return type_; }
+
+  impl::socket_t handle() const noexcept { return socket_id_; }
+
 
  protected:
   // See: stackoverflow.com/questions/14038589
@@ -425,17 +470,13 @@ class Socket {
 
  public:
   void close() {
+    is_open_ = false;
     if (!is_valid()) { return; }
     if(impl::close(socket_id_) == impl::k_socket_error ) {
       return handle_error(xsstate::error);
     }
     socket_id_ = impl::k_invalid_socket;
   }
-
-  // get / set
-  Type type() const noexcept { return type_; }
-
-  impl::socket_t handle() const noexcept { return socket_id_; }
 
  private:
   void move(const Socket& other) {
@@ -445,7 +486,8 @@ class Socket {
 
  public:
   impl::socket_t socket_id_ = impl::k_invalid_socket;
-  bool is_blocking          = true;
+  bool is_blocking_         = true;
+  bool is_open_             = false;
   mutable xsstate state_    = xsstate::good;
   bool flag_exceptions_     = true;
   Type type_                = Type::undef;
@@ -459,17 +501,77 @@ class TCPSocket : public Socket {
 
   TCPSocket() : Socket{Socket::Type::socket} {}
 
-  void connect(IPAddress address, unsigned int port) {
+  // param[in] timeout:
+  //  if timeout == 0.0: finish immediately
+  //  if time::isinf(timeout): never timeout, and will wait until the first file descriptor is ready
+  //                           the same: ::select(.., timeout := NULL)
+  void connect(IPAddress address, unsigned int port, double timeout) {
     assert(is_good());
-    close();
+    if (is_valid()) {
+      return handle_error(xsstate::fail, "xmat::TCPSocket::connect(..). Listener is already used.");
+    }
     create();
     if(!is_good()) { return; }
 
     sockaddr_in address_v = impl::create_address(address.to_int(), port);
-    if (::connect(socket_id_, 
-                  reinterpret_cast<sockaddr*>(&address_v), 
-                  sizeof(address_v)) == impl::k_socket_error) {
-      return handle_error(xsstate::error, "TCPSocket::connect(). connect failed");
+
+    if (time::isinf(timeout)) {
+      if (::connect(socket_id_, 
+                    reinterpret_cast<sockaddr*>(&address_v), 
+                    sizeof(address_v)) == impl::k_socket_error) { 
+        return handle_error(xsstate::error, "TCPSocket::connect(). connect failed");
+      }
+      is_open_ = true;
+      return;
+    }
+    // end for infinite-timeout case
+
+    // finite-timeout case
+    // ---------------------------
+    bool blocking_tmp = blocking();
+    if (blocking_tmp) blocking(false);
+
+    auto out2 = ::connect(socket_id_, reinterpret_cast<sockaddr*>(&address_v), sizeof(address_v));
+    if( out2 != impl::k_socket_error) { // if error: it can be: non_blocking_in_progress()
+      blocking(blocking_tmp);
+      is_open_ = true;
+      return;
+    }
+    else if (!impl::non_blocking_in_progress()) {
+      return handle_error(xsstate::error, "xmat::TCPSocket::connect().\n"
+                                          "finite-timeout ::connect(...) fail");
+    }
+
+    if (!blocking_tmp) {
+      // it's ok for non-blocking mode. call connect untill is_open() == true
+      return;
+    }
+    // end for: non-blocking AND finite-timeout
+
+    // finite-timeout AND blocking
+    // ---------------------------
+    fd_set selector;
+    FD_ZERO(&selector);
+    FD_SET(socket_id_, &selector);
+
+    timeval time = impl::double2timeval(timeout);
+    auto count = ::select(static_cast<int>(socket_id_+1), NULL, &selector, NULL, &time);
+    blocking(true);
+
+    if (count > 0) {
+      if (remoteaddress() != IPAddress::none()) {
+        is_open_ = true;
+      }
+      else {
+        return handle_error(xsstate::error, "xmat::TCPSocket::connect().\n"
+                                     "non-zero-timeout AND blocking. ::select() \n"
+                                     "Connection refused");
+      }
+    }
+    else {
+      return handle_error(xsstate::error, "xmat::TCPSocket::connect().\n"
+                                   "non-zero-timeout AND blocking. ::select \n"
+                                   "Failed to connect before timeout is over");
     }
   }
 
@@ -498,6 +600,7 @@ class TCPSocket : public Socket {
     if(!is_valid()) {
       return handle_error(xsstate::fail, "TCPSocket::connect__() unsuccess");
     }
+    is_open_ = true;
   }
 
   size_t send(const void* buf, size_t len) {
@@ -505,7 +608,7 @@ class TCPSocket : public Socket {
 
     size_t sent = 0;
     if (!buf || !len) {
-      handle_error(xsstate::fail, "TCPSocket::send(...). !data || !size");
+      handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !len");
       return sent;
     }
 
@@ -523,24 +626,83 @@ class TCPSocket : public Socket {
   }
 
 
-  size_t recv(void* buf, size_t len) {
+  bool sendall(const void* buf, size_t len, double timeout) {
     assert(is_valid() && is_good());
 
+    if (!buf || !len) {
+      handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !len");
+      return false;
+    }
+
+    std::chrono::duration<double> dt{timeout};
+    auto tend = std::chrono::system_clock::now() + dt;
+
+    size_t total = 0, left = len;
+    while(total < len && std::chrono::system_clock::now() < tend) {
+      auto sent = ::send(socket_id_,
+                         static_cast<const char*>(buf) + total,
+                         static_cast<impl::size_p>(left),
+                         impl::k_tcp_send_flags);
+      if (sent == impl::k_socket_error) {
+        handle_error(xsstate::error, "TCPSocket::send() failed");
+        return false;
+      }
+
+      assert(sent >= 0);
+      total += static_cast<size_t>(sent);
+      left -= static_cast<size_t>(sent);
+      std::this_thread::yield();  //??
+    }
+
+    return total == len;
+  }
+
+
+  size_t recv(void* buf, size_t len) {
+    assert(is_valid() && is_good());
     size_t sent = 0;
     if (!buf || !len) {
-      handle_error(xsstate::fail, "TCPSocket::send(...). !data || !size");
+      handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !len");
       return sent;
     }
 
-    auto received = ::recv(socket_id_, 
-                           static_cast<char*>(buf), 
-                           static_cast<impl::size_p>(len),
-                           impl::k_tcp_send_flags);
-    if (received <= 0) {
-      received = 0;
-      handle_error(xsstate::error, "TCPSocket::recv() failed");
+    auto received = ::recv(socket_id_, static_cast<char*>(buf), 
+                            static_cast<impl::size_p>(len), 
+                            impl::k_tcp_send_flags);
+
+    if (received == impl::k_socket_error && !impl::non_blocking_in_progress()) {
+      handle_error(xsstate::error, "xmat::TCPSocket::recvall(...).\n");
+    } 
+    else if ( received == 0 ) {
+      handle_error(xsstate::error, "xmat::TCPSocket::recvall(...).\n"
+                                   "connection has been closed");
     }
-    return received;
+    return static_cast<size_t>(received > 0 ? received : 0);
+  }
+
+  // param[in] timeout - sec
+  bool recvall(void* buf, size_t len, double timeout) {
+    assert(is_valid() && is_good());
+    if (!buf || !len) {
+      handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !buf");
+      return false;
+    }
+
+    std::chrono::duration<double> tt{timeout};
+    auto tend = std::chrono::system_clock::now() + tt;
+
+    size_t total = 0, left = len;
+    while(total < len && std::chrono::system_clock::now() < tend) {
+      auto received = recv(static_cast<char*>(buf) + total, left);
+      if (!is_good()) {
+        return false;
+      }
+      assert(received >= 0);
+      total += static_cast<size_t>(received);
+      left -= static_cast<size_t>(received);
+      std::this_thread::yield();  //??
+    }
+    return total == len;
   }
 
   // xmat::BugIn, xmat::BugOut send - recv
@@ -595,10 +757,7 @@ class TCPSocket : public Socket {
     }
     sockaddr_in address{};
     impl::address_len_t size = sizeof(address);
-    if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size)) {
-      handle_error(xsstate::error, "TCPSocket::remoteaddress(). `getpeername` failed");
-    }
-    else {
+    if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) == 0) {
       out = IPAddress(ntohl(address.sin_addr.s_addr));
     }
     return out;
@@ -612,10 +771,7 @@ class TCPSocket : public Socket {
     }
     sockaddr_in address{};
     impl::address_len_t size = sizeof(address);
-    if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size)) {
-      handle_error(xsstate::error, "TCPSocket::remoteport(). `getpeername` failed");
-    }
-    else{
+    if (getpeername(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) == 0) {
       out = ntohs(address.sin_port);
     }
     return out;
@@ -629,10 +785,7 @@ class TCPSocket : public Socket {
     }
     sockaddr_in address{};
     impl::address_len_t size = sizeof(address);
-    if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size)) {
-      handle_error(xsstate::error, "TCPSocket::remoteport(). `getsockname` failed");
-    }
-    else{
+    if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) == 0) {
       out = ntohs(address.sin_port);
     }
     return out;
@@ -647,26 +800,30 @@ class TCPListener : public Socket {
   TCPListener() : Socket{Socket::Type::listener} {}
 
   // param[in] nconn - number of connections for listenning
-  void listen(unsigned short port, int nconn = SOMAXCONN, IPAddress address = IPAddress{0, 0, 0, 0}) {
-    close();
+  void listen(unsigned short port, IPAddress address = IPAddress{0, 0, 0, 0}, int nconn = SOMAXCONN) {
+    if (is_valid()) {
+      return handle_error(xsstate::fail, "xmat::TCPListener::listen(). Listener is already used.");
+    }
+
     create();
     assert(is_good() && is_valid());
     
-    if (address.is_none()) { 
-      return handle_error(xsstate::fail, "TCPListner::listen. `address` := `none`");
+    if (address.is_none()) {
+      return handle_error(xsstate::fail, "xmat::TCPListner::listen. `address` := `none`");
     }
 
     sockaddr_in addr = impl::create_address(address.to_int(), port);
-    if (::bind(socket_id_, 
+    if (::bind(socket_id_,
                reinterpret_cast<sockaddr*>(&addr),
                sizeof(addr)) == impl::k_socket_error)
     {
-      return handle_error(xsstate::error, "TCPListener::listen(). `bind` failed");
+      return handle_error(xsstate::error, "xmat::TCPListener::listen(). `bind` failed");
     }
 
     if (::listen(socket_id_, nconn) == impl::k_socket_error) {
-      return handle_error(xsstate::error, "TCPListener::listen(). `listen` failed");
+      return handle_error(xsstate::error, "xmat::TCPListener::listen(). `listen` failed");
     }
+    is_open_ = true;
   }
 
   void accept(TCPSocket& socket) {
@@ -688,7 +845,7 @@ class TCPListener : public Socket {
     sockaddr_in address{};
     impl::address_len_t size = sizeof(address);
     if (getsockname(socket_id_, reinterpret_cast<sockaddr*>(&address), &size) == impl::k_socket_error) {
-      handle_error(xsstate::error, "TCPListener::localport(). `getsockname` gailed");
+      handle_error(xsstate::error, "TCPListener::localport(). `getsockname` failed");
     } else {
       out = ntohs(address.sin_port);
     }
@@ -760,25 +917,22 @@ class Selector {
     size_ = 0;
   }
 
-
+  // param[in] timeout:
+  //  if timeout == 0.0: finish immediately
+  //  if time::isinf(timeout): never timeout, and will wait until the first file descriptor is ready
+  //                           the same: ::select(.., timeout := NULL)
   int wait(double timeout) {
-    double ipart = 0.0;
-    double fpart = std::modf(timeout, &ipart);
-
-    timeval time;
-    time.tv_sec  = static_cast<long>(ipart);
-    time.tv_usec = static_cast<int>(fpart * 1000000.0);
-
+    timeval time = impl::double2timeval(timeout);
     ready_ = all_;
 
     // Wait until one of the sockets is ready for reading, or timeout is reached
     // The first parameter is ignored on Windows
-    int count = ::select(max_socket_id_ + 1, &ready_, NULL, NULL, timeout != 0.0 ? &time : NULL);
+    int count = ::select(max_socket_id_ + 1, &ready_, NULL, NULL, time::isinf(timeout) ? NULL : &time);
     return count;
   }
 
 
-  bool isready(Socket& socket) const {
+  bool is_ready(Socket& socket) const {
     assert(socket.is_valid());
     if (!socket.is_valid()) { 
       return false;
@@ -815,71 +969,131 @@ class Selector {
 
 
 template<size_t Nsock = 8, size_t Nlis = 2>
-class TCPGroup_ {
+class TCP_ {
  public:
-  TCPGroup_() {}
 
-  TCPListener& listener() {
-    listeners_.at(n_lis_++) = TCPListener{};
-    return listeners_.at(n_lis_-1);
-  }
+  TCP_() {}
 
-  // TCPListener& listener(unsigned short port, int nconn = SOMAXCONN, IPAddress address = IPAddress{0, 0, 0, 0}) { }
-
-  TCPSocket& socket() {
-    if (n_sock_ >= n_sock_) { throw SocketError(xsstate::fail, "xmat::TCPGroup::socket(). out_of_range"); }
-    sockets_.at(n_sock_++) = TCPSocket{};
-    return sockets_.at(n_sock_-1);
-  }
-
-  // TCPSocket& socket(IPAddress address, unsigned int port) { }
- 
-  // TCPSocket& socket(IPAddress address, unsigned int port, double timeout) { }
-
-  // selector
-  void wait() {
-
-  }
-
-  template<typename T>
-  friend void support_remove_element(T* begin, T*end, const T* element) {
-    auto it = std::find_if(begin, end, 
-                           [idx = element->handle()] (const T& ls) { return ls == idx; });
-    if (it == end) {
-      throw SocketError(xsstate::fail, "xmat::TCPGroup::remove(sock). socket isn`t in this group");
+  TCPListener* listener(unsigned short port, IPAddress address = IPAddress{0, 0, 0, 0}, int nconn = SOMAXCONN) {
+    if (n_lis_ >= max_nlis()) {
+      throw SocketError(xsstate::fail, "xmat::TCPGroup::listener(...). out_of_range");
     }
-    std::copy(it+1, end, it);
+    TCPListener item{};
+    item.exceptions(exceptions());
+    item.listen(port, address, nconn);
+    if (!item.is_good()) {
+      return nullptr;
+    }
+    selector_.add(item);
+    listeners_[n_lis_++] = std::move(item);
+    return &listeners_[n_lis_-1];
   }
 
-  void remove(Socket& socket) {
-    if (socket.type() == Socket::Type::undef) {
-      throw SocketError(xsstate::fail, "xmat::TCPGroup::remove(..). socket.type() == Socket::Type::undef");
+
+  TCPSocket* client(IPAddress address, unsigned int port, double timeout) {
+    if (n_sock_ >= max_nsock()) {
+      throw SocketError(xsstate::fail, "xmat::TCPGroup::socket(...). out_of_range");
+    }
+    TCPSocket item{};
+    item.exceptions(exceptions());
+    item.connect(address, port);
+    if (!item.is_good()) {
+      return nullptr;
+    }
+    selector_.add(item);
+    sockets_[n_sock_++] = std::move(item);
+    return &sockets_[n_sock_-1];
+  }
+
+
+  TCPSocket* accept(TCPListener* listener) {
+    if (n_sock_ >= max_nsock()) {
+      throw SocketError(xsstate::fail, "xmat::TCPGroup::accept(...). out_of_range");
+    }
+    if (!contains(listener)) {
+      throw SocketError(xsstate::fail, "xmat::TCPGroup::accept(listener). alien listener");
+    }
+    if (!is_ready(listener)) {
+      throw SocketError(xsstate::fail, "xmat::TCPGroup::accept(listener). listener isn't ready");
     }
 
-    if (socket.type == Socket::Type::listener) {
-      support_remove_element(listeners_.being(), listeners_.end(), &socket);
+    TCPSocket remote{};
+    listener->accept(remote);
+    if (!listener->is_good()) {
+      return nullptr;
+    }
+    selector_.add(remote);
+    sockets_[n_sock_++] = std::move(remote);
+    return &sockets_[n_sock_-1];
+  }
+
+  // selector-methods
+  // ----------------
+  int wait(double timeout) { return selector_.wait(timeout); }
+
+  bool is_ready(Socket* socket) { assert(contains(socket)); return selector_.is_ready(*socket); }
+
+  // remove ----
+  void remove(Socket* socket) {
+    assert(contains(socket));
+    if (socket->type() == Socket::Type::undef) {
+      throw SocketError(xsstate::fail, 
+                        "xmat::TCPGroup::remove(..). socket.type() == Socket::Type::undef");
+    }
+    if (socket->type() == Socket::Type::listener) {
+      support_remove_element(listeners_.begin(), listeners_.end(), socket, selector_);
       --n_lis_;
     } 
     else {
-      support_remove_element(sockets_.being(), sockets_.end(), &socket);
+      support_remove_element(sockets_.begin(), sockets_.end(), socket, selector_);
       --n_sock_;
     }
-    selector_.remove(socket);
   }
 
+  // support
+  bool contains(Socket* socket) {
+    if (socket->type() == Socket::Type::listener) {
+      auto it = std::find_if(listeners_.begin(), listeners_.end(),
+                             [tgt = socket] (const TCPListener& item) { return &item == tgt; });
+      return it != listeners_.begin();
+    } 
+    else {
+      auto it = std::find_if(sockets_.begin(), sockets_.end(),
+                             [tgt = socket] (const TCPSocket& item) { return &item == tgt; });
+      return it != sockets_.begin();
+    }
+  }
 
-  // set / get
+ private:
+  template<typename Iter, typename T>
+  friend void support_remove_element(Iter begin, Iter end, T* element, Selector& sel) {
+    // look up by pointer
+    auto it = std::find_if(begin, end, 
+                           [tgt = element] (const T& item) { return &item == tgt; });
+    if (it == end) {
+      throw SocketError(xsstate::fail, 
+                        "xmat::TCPGroup::remove(sock). socket isn`t in this group");
+    }
+    sel.remove(*element);
+    std::move(it+1, end, it);
+  }
+
+ public:
   bool exceptions() const noexcept { return selector_.exceptions(); }
 
   void exceptions(bool value) noexcept { selector_.exceptions(value); }
 
-  TCPListener& listener(size_t idx) { return listeners_[idx]; }
+  TCPListener& ilistener(size_t idx) { return listeners_[idx]; }
 
-  TCPSocket& socket(size_t idx) { return sockets_[idx]; }
+  TCPSocket& isocket(size_t idx) { return sockets_[idx]; }
 
   size_t nlis() const noexcept { return n_lis_; }
 
   size_t nsock() const noexcept { return n_sock_; }
+
+  static size_t max_nlis() noexcept { return Nlis; }
+
+  static size_t max_nsock() noexcept { return Nsock; }
 
  private:
   std::array<TCPListener, Nlis> listeners_;

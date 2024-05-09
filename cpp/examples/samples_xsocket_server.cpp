@@ -133,21 +133,21 @@ int sample_4() {
   return 1;
 }
 
+// after add xmat::Selector, xmat::TCP and non-blocking mode
+// ----------------------------------------------------------
+// ----------------------------------------------------------
 int sample_5() {
   print(__PRETTY_FUNCTION__, 1);
-  print("TCPGroup: add, remove", 0, '-');
+  print("TCPGroup: listener. accept", 0, '-');
 
-  print(1, "make a listener", 0, '-');
-  xmat::TCPGroup_<> tcp{};
-  auto& sock0 = tcp.socket();
-  auto& sock1 = tcp.socket();
-  auto& sock2 = tcp.socket();
+  print(1, "make listener: ", 0, '-');
+  xmat::TCPListener listener;
+  listener.listen(xmat::k_xsport);
 
-  printv(tcp.nsock());
-  for (int n = 0, N = tcp.nsock(); n < N; ++n) {
-    printv(tcp.socket(n).handle());
-  }
-  
+  xmat::TCPSocket socket;
+  listener.accept(socket);
+  printv(socket.remoteaddress());
+
   print(1, "FINISH", 1, '=');
   return 1;
 }
