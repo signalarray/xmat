@@ -71,7 +71,7 @@ int sample_4() {
   socket.connect(xmat::IPAddress::localhost(), xmat::k_xsport, 0.0);
 
   print(1, "send BugOut", 0, '-');
-  socket.send(xout);
+  socket.send(xout, 0.0);
 
   print(1, "FINISH", 1, '=');
   return 1;

@@ -125,7 +125,7 @@ int sample_4() {
 
   print(1, "receive in BugIn", 0, '-');
   xmat::BugIn xin;
-  socket.recv(xin);
+  socket.recv(xin, 0.0);
   
   printv(xin);
 
@@ -140,6 +140,14 @@ int sample_5() {
   print(__PRETTY_FUNCTION__, 1);
   print("TCPGroup: listener. accept", 0, '-');
 
+  print(1, "test std::chrono::duration<double>: ", 0, '-');
+  std::chrono::duration<double> dt{2.125};
+  auto dt2 = std::chrono::duration_cast<std::chrono::milliseconds>(dt);
+  auto dt3 = std::chrono::duration_cast<std::chrono::microseconds>(dt);
+  printv(dt.count());   //  2.125 
+  printv(dt2.count());  //  2125
+  printv(dt3.count());  //  2125000
+ 
   print(1, "make listener: ", 0, '-');
   xmat::TCPListener listener;
   listener.listen(xmat::k_xsport);
@@ -151,6 +159,15 @@ int sample_5() {
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
+
+int sample_6() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("TCPGroup: listener. accept", 0, '-');
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
 } // namespace
 
 
@@ -158,7 +175,7 @@ int main() {
   print(2, __FILE__, 0, '-');
   
   try {
-    sample_5();
+    sample_6();
 
   }
   catch (std::exception& err) {
@@ -170,3 +187,4 @@ int main() {
   print(1, "FINISH" __FILE__, 1, '=');
   return EXIT_SUCCESS;
 }
+

@@ -191,6 +191,7 @@ namespace time {
   double  inf() noexcept { return std::numeric_limits<double>::infinity(); }
   bool    isnan(double t) noexcept { return std::isnan(t); }
   bool    isinf(double t) noexcept { return !std::isfinite(t); }
+  void    sleep(double timeout) noexcept { std::this_thread::sleep_for(std::chrono::duration<double>{timeout}); }
 }
 
 
@@ -626,12 +627,11 @@ class TCPSocket : public Socket {
   }
 
 
-  bool sendall(const void* buf, size_t len, double timeout) {
+  void sendall(const void* buf, size_t len, double timeout) {
     assert(is_valid() && is_good());
 
     if (!buf || !len) {
-      handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !len");
-      return false;
+      return handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !len");
     }
 
     std::chrono::duration<double> dt{timeout};
@@ -644,8 +644,7 @@ class TCPSocket : public Socket {
                          static_cast<impl::size_p>(left),
                          impl::k_tcp_send_flags);
       if (sent == impl::k_socket_error) {
-        handle_error(xsstate::error, "TCPSocket::send() failed");
-        return false;
+        return handle_error(xsstate::error, "TCPSocket::send() failed");
       }
 
       assert(sent >= 0);
@@ -653,8 +652,9 @@ class TCPSocket : public Socket {
       left -= static_cast<size_t>(sent);
       std::this_thread::yield();  //??
     }
-
-    return total == len;
+    if (total != len) {
+      return handle_error(xsstate::fail, "TCPSocket::sendall() failed. total != len");
+    }
   }
 
 
@@ -667,8 +667,8 @@ class TCPSocket : public Socket {
     }
 
     auto received = ::recv(socket_id_, static_cast<char*>(buf), 
-                            static_cast<impl::size_p>(len), 
-                            impl::k_tcp_send_flags);
+                           static_cast<impl::size_p>(len), 
+                           impl::k_tcp_send_flags);
 
     if (received == impl::k_socket_error && !impl::non_blocking_in_progress()) {
       handle_error(xsstate::error, "xmat::TCPSocket::recvall(...).\n");
@@ -680,12 +680,12 @@ class TCPSocket : public Socket {
     return static_cast<size_t>(received > 0 ? received : 0);
   }
 
+
   // param[in] timeout - sec
-  bool recvall(void* buf, size_t len, double timeout) {
+  void recvall(void* buf, size_t len, double timeout) {
     assert(is_valid() && is_good());
     if (!buf || !len) {
-      handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !buf");
-      return false;
+      return handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !buf");
     }
 
     std::chrono::duration<double> tt{timeout};
@@ -695,20 +695,23 @@ class TCPSocket : public Socket {
     while(total < len && std::chrono::system_clock::now() < tend) {
       auto received = recv(static_cast<char*>(buf) + total, left);
       if (!is_good()) {
-        return false;
+        return;
       }
       assert(received >= 0);
       total += static_cast<size_t>(received);
       left -= static_cast<size_t>(received);
       std::this_thread::yield();  //??
     }
-    return total == len;
+    if (total != len) {
+      return handle_error(xsstate::fail, "TCPSocket::recvall() failed. total != len");
+    }
   }
+
 
   // xmat::BugIn, xmat::BugOut send - recv
   // -------------------------------------
   template<typename MemSourceT>
-  void send(const BugOut_<OBBuf_<MemSourceT>>& xout) {
+  void send(const BugOut_<OBBuf_<MemSourceT>>& xout, double timeout) {
     if(xout.buf().is_open()) {
       return handle_error(xsstate::fail,
         "TCPSocket::send(BugOut_ xout). xout.buf().is_open() := false. xout must be closed");
@@ -717,12 +720,12 @@ class TCPSocket : public Socket {
       return handle_error(xsstate::fail,
         "TCPSocket::send(BugOut_ xout). xout.head().total_size := 0. xout must be not empty");
     }
-
-    send(xout.buf().data(), xout.buf().size());
+    sendall(xout.buf().data(), xout.buf().size(), timeout);
   }
 
+
   template<typename MemSourceT>
-  void recv(BugIn_<IBBuf_<MemSourceT>>& xin) {
+  void recv(BugIn_<IBBuf_<MemSourceT>>& xin, double timeout) {
     if(xin.buf().size() != 0) {
       return handle_error(xsstate::fail,
         "TCPSocket::recv(BugIn_ xin). xin.buf().size() :!= 0. xout must be empty");
@@ -730,9 +733,10 @@ class TCPSocket : public Socket {
     
     // -- try read Head
     char* ptr_head = xin.buf().push_reserve(k_head_size);
-    if (recv(static_cast<void*>(ptr_head), static_cast<size_t>(k_head_size)) < k_head_size){
+    recvall(static_cast<void*>(ptr_head), k_head_size, timeout);
+    if (!is_good()){
       return handle_error(xsstate::fail, 
-        "TCPSocket::recv(BugIn_ xin). recv(header) < k_head_size. `head` has wrong len");
+        "TCPSocket::recv(BugIn_ xin). recvall(header) failed");
     }
     xin.scan_head();
 
@@ -740,9 +744,10 @@ class TCPSocket : public Socket {
     assert(xin.head().total_size >= k_head_size);
     size_t data_size = xin.head().total_size - k_head_size;
     char* ptr_data = xin.buf().push_reserve(data_size);
-    if(recv(static_cast<void*>(ptr_data), data_size) < data_size) {
+    recvall(static_cast<void*>(ptr_data), data_size, timeout);
+    if(!is_good()) {
       return handle_error(xsstate::fail, 
-        "TCPSocket::recv(BugIn_ xin). recv(data) < k_head_size. `data` has wrong len");
+        "TCPSocket::recv(BugIn_ xin). recvall(data) failed");
     }
     xin.buf().push_all();
   }
@@ -762,7 +767,8 @@ class TCPSocket : public Socket {
     }
     return out;
   }
-  
+
+
   portint_t remoteport() const { 
     assert(is_valid());
     portint_t out = 0;
@@ -776,6 +782,7 @@ class TCPSocket : public Socket {
     }
     return out;
   }
+
 
   portint_t localport() const { 
     assert(is_valid());

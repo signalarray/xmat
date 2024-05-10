@@ -1,11 +1,24 @@
 TODO
 ====
-- matlab. TCPSocket support
-- cpp TCPSocket non-blocking mode
-
+- [+-] matlab. TCPSocket support
+- [+-] cpp TCPSocket non-blocking mode
 - change data format implementation
 - add big-little endian support
 - check .cpp BugOut<file>
+
+Socket connection examples
+==========================
+Example 0:
+----------
+![socket-example-0](/doc/resources/socket-scheme-0.png)
+
+Example 1:
+--------------
+![socket-example-1](/doc/resources/socket-scheme-1.png)
+
+Example 2:
+--------------
+![socket-example-2](/doc/resources/socket-scheme-2.png)
 
 
 XMAT binary format
