@@ -79,6 +79,53 @@ XMAT_ADDTYPE(std::complex<float>,  "cf32");   // complex
 XMAT_ADDTYPE(std::complex<double>, "cf64");
 
 
+// changes in Format
+// ------------------------------
+template<typename T>
+struct XType {
+  static constexpr const char* const label = "undef";
+};
+
+
+#define XMAT_REGTYPE(Id, Size, Label, Type)                          \
+template<> struct XType<Type> {                                      \
+  static_assert(sizeof(Type) == Size, "sizeof(" #Type ") !=" #Size); \
+  static const std::uint8_t id = Id;                                 \
+  static constexpr const char* const label = Label;                  \
+}; \
+
+
+XMAT_REGTYPE(0x00,    1,    "c",    char);
+XMAT_REGTYPE(0x01,    1,    "?",    bool);
+
+XMAT_REGTYPE(0x10,    1,    "i0",   std::int8_t);
+XMAT_REGTYPE(0x11,    2,    "i1",   std::int16_t);
+XMAT_REGTYPE(0x12,    4,    "i2",   std::int32_t);
+XMAT_REGTYPE(0x13,    8,    "i3",   std::int64_t);
+
+XMAT_REGTYPE(0x20,    2,    "i0",   std::complex<std::int8_t>);
+XMAT_REGTYPE(0x21,    4,    "i1",   std::complex<std::int16_t>);
+XMAT_REGTYPE(0x22,    8,    "i2",   std::complex<std::int32_t>);
+XMAT_REGTYPE(0x23,    16,   "i3",   std::complex<std::int64_t>);
+
+XMAT_REGTYPE(0x30,    1,    "u0",   std::uint8_t);
+XMAT_REGTYPE(0x31,    2,    "u1",   std::uint16_t);
+XMAT_REGTYPE(0x32,    4,    "u2",   std::uint32_t);
+XMAT_REGTYPE(0x33,    8,    "u3",   std::uint64_t);
+
+XMAT_REGTYPE(0x40,    2,    "u0",   std::complex<std::uint8_t>);
+XMAT_REGTYPE(0x41,    4,    "u1",   std::complex<std::uint16_t>);
+XMAT_REGTYPE(0x42,    8,    "u2",   std::complex<std::uint32_t>);
+XMAT_REGTYPE(0x43,    16,   "u3",   std::complex<std::uint64_t>);
+
+XMAT_REGTYPE(0x52,    4,    "f2",   float);
+XMAT_REGTYPE(0x53,    8,    "f3",   double);
+
+XMAT_REGTYPE(0x62,    8,    "F2",   std::complex<float>);
+XMAT_REGTYPE(0x63,    16,   "F3",   std::complex<double>);
+// -------------------------------------------------------
+
+
 // byte buffer
 // ----------------------------
 class XStreamError : public std::runtime_error {
@@ -446,7 +493,7 @@ class StreamBlock {
   template<typename T>
   bool check_element() const {
     bool out = 
-      std::strcmp(TypeInfo<T>::name, typename_.cbegin()) == 0 && 
+      std::strcmp(TypeInfo<T>::name, typename_.data()) == 0 && 
       TypeInfo<T>::size == typesize_;
     return out;
   }
@@ -635,7 +682,7 @@ struct BugIn_ {
       begin(),
       end(),
       [name](const StreamBlock& block){
-        return std::strcmp(name.ptr, block.name_.cbegin()) == 0;
+        return std::strcmp(name.ptr, block.name_.data()) == 0;
       }
     );
     return it;

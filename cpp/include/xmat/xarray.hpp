@@ -32,8 +32,8 @@ enum class MOrder: char {
 
 namespace hidx { // help index functions namespace
 
-template<typename T0, typename T1, typename T2>
-T2 conv(T0* first0, T1* first1, size_t n, T2 inital) {
+template<typename It0, typename It1, typename T2>
+T2 conv(It0 first0, It1 first1, size_t n, T2 inital) {
   for (; n != 0; --n, ++first0, ++first1) { 
     inital += *first0 * *first1; 
   }

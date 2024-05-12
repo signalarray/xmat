@@ -303,12 +303,26 @@ int sample_5() {
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
+// ------------------------------
+// changes in Format
+// ------------------------------
+int sample_6() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("xmat::bugin. using memsource", 0, '-');
+
+  printv(xmat::XType<char>::id);
+  printv(xmat::XType<char>::label);
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
 }
 
 
 int main() {
   print("START: " __FILE__, 0, '=');
-  sample_3();
+  sample_6();
   print("END: " __FILE__, 0, '=');
   return EXIT_SUCCESS;
 }
