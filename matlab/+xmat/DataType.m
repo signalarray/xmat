@@ -86,6 +86,8 @@ classdef DataType
       info = xmat.DataType.by_id(id);
       if xmat.DataType.iscomplex(info.id)
         s = strcat('cx_', info.typename);
+      else
+        s = info.typename;
       end
     end
 

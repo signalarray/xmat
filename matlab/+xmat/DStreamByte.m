@@ -1,33 +1,30 @@
-classdef BufByte< handle
+classdef DStreamByte < xmat.DStream_
     
   properties
-    mode
-
     buf = uint8(zeros(0, 1));
     cursor = 0
-    byteorder = 'n'
   end
   
 
   methods (Static)
-    function bbout = out()
-      bbout = xmat.BufByte('w');
+    function ods = out()
+      ods = xmat.DStreamByte('w');
     end
 
-    function bbin = in()
-      bbin = xmat.BufByte('r');
+    function ids = in()
+      ids = xmat.DStreamByte('r');
     end
   end
 
 
   methods
-    function obj = BufByte(mode)
+    function obj = DStreamByte(mode)
       % Parameters:
       % -----------
       % mode: {'r', 'w'}
 
       if ~any(mode == ["r", "w"])
-        error('xmat.BufByte.ctor(..). wrong `mode` value')
+        error('xmat.DStreamByte.ctor(..). wrong `mode` value')
       end
       obj.mode = mode;
     end
@@ -35,7 +32,7 @@ classdef BufByte< handle
     % for deffered initialization
     function obj = set_buffer(obj, buf)
       if obj.mode ~= "r"
-        error('xmat.BufByte.set_buffer(). wrong mode');
+        error('xmat.DStreamByte.set_buffer(). wrong mode');
       end
       check_buffer(buf);
 
@@ -92,48 +89,22 @@ classdef BufByte< handle
       end
     end    
 
-    
     function status = eof(obj)
       status = obj.cursor == length(obj.buf);
     end
-
 
     function n = size(obj)
       n = length(obj.buf);
     end
 
-
-    function [A, count] = read(obj, size, count, typename)
-      if obj.mode ~= "r"
-        error('wrong mode for reading');
-      end
-      if nargin < 4
-        typename = 'char*1';
-      end
-      
-      begin_ = obj.cursor;
-      end_ = begin_ + size*count;
-
-      A = obj.buf(begin_+1:end_);
-      if any(strcmp(typename, {'char', 'char*1'}))
-        A = char(A);
-      else
-        A = typecast(A, typename);
-      end
-      obj.cursor = end_;
-    end
-
-
-    function count = write(obj, A)
-      if obj.mode ~= 'w'
-        error('wrong mode for writing');
-      end
-
+    % abstract implementation
+    function count = do_write(obj, A)
       if ischar(A) % strings
         data_ = uint8(A);
       elseif isstring(A)
         data_ = uint8(char(A));
-      else
+      else % numbers
+        A = xmat.Endian.set(A, obj.endian);
         data_ = typecast(A, 'uint8');
       end
 
@@ -143,7 +114,35 @@ classdef BufByte< handle
       obj.buf(begin_+1:end_, 1) = data_;
       count = length(data_);
       obj.cursor = length(obj.buf);
-    end    
+    end
+
+
+    function [A, numel] = do_read(obj, numel, typeinfo)
+      begin_ = obj.cursor;
+      end_ = begin_ + typeinfo.size*numel;
+
+      A = obj.buf(begin_ + 1 : end_);
+      if any(strcmp(typeinfo.typename, {'char', 'char*1'}))
+        A = char(A);
+      else
+        A = typecast(A, typeinfo.typename);
+        A = xmat.Endian.set(A, obj.endian);
+      end
+      obj.cursor = end_;
+    end
+
+
+    function out = print(obj, width)
+      if nargin < 2
+        width = 8;
+      end
+      out = obj.buf;
+      n = length(out);
+      if rem(n, width) 
+        out(end + 1: end + (width - rem(n, width))) = 256;
+      end
+      out = transpose(reshape(out, width, []));
+    end
   end
 end
 
