@@ -84,38 +84,24 @@ inline bool is_aligned(const void* ptr) noexcept {
   return !(reinterpret_cast<uintptr_t>(ptr) % Aln);
 }
 
+// ----------------------------
+// byteorder stuff
+// ----------------------------
 // is little endian
 inline bool isle() {
   size_t x = 1;
   return *((char *) &x);
 }
 
-// template<typename T, class Arena = GlobalMemSource>
-// class GlobalMemAllocator {
-//  public:
-//   using value_type = T;
-//   using arena_t = Arena;
-//   using source_t = typename Arena::memsource_t;
-// 
-//   GlobalMemAllocator() = default;
-//   
-//   template<typename U> 
-//   constexpr GlobalMemAllocator(const GlobalMemAllocator<U>&) noexcept {}
-//   
-//   T* allocate(size_t n) { return source().template allocate<T>(n); }
-// 
-//   template<size_t Aln>
-//   T* allocate(size_t n) { return source().template allocate_aln<T, Aln>(n); }
-// 
-//   void deallocate(T* p, size_t n) noexcept {}
-// 
-//   static source_t& source() { return GlobalMemSource::get(); }  // the same for all instancess
-// };
-// 
-// 
-// template<class T, class U, class A>
-// bool operator==(const GlobalMemAllocator<T, A>&, const GlobalMemAllocator<U, A>&) { return true; }
-//  
-// template<class T, class U, class A>
-// bool operator!=(const GlobalMemAllocator<T, A>&, const GlobalMemAllocator<U, A>&) { return false; }
+#ifndef XMAT_IS_BIG_ENDIAN
+// static_assert(false, "XMAT_IS_BIG_ENDIAN macro must be defined outside");
+# error "Undefined byte order: XMAT_IS_BIG_ENDIAN macro"
+#endif
+enum class Endian {
+  little = 0,
+  big    = 1,
+  native = XMAT_IS_BIG_ENDIAN ? big : little,
+  changeble
+};
+
 } // namespace xmat

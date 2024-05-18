@@ -2,7 +2,7 @@
 add_executable(samples_xutil samples_xutil.cpp)
 add_executable(samples_xmemory samples_xmemory.cpp samples_xmemory_link.cpp)
 add_executable(samples_xarray samples_xarray.cpp)
-add_executable(samples_xstream samples_xstream.cpp)
+add_executable(samples_xdatastream samples_xdatastream.cpp)
 
 add_executable(example_file example_file.cpp)
 

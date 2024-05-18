@@ -40,7 +40,7 @@
 
 // project
 #include "xutil.hpp"
-#include "xstream.hpp"
+#include "xdatastream.hpp"
 
 
 namespace xmat {
