@@ -23,27 +23,14 @@ classdef XUtil
       (xmat.XUtil.k_max_ndim + 1) * xmat.XUtil.k_xsize_t_size + ...
       (1 + 1)*1 + 2 * xmat.XUtil.k_fmt_signature_size
 
-
-    % type stuff
-    % ----------
-    k_types_map_native = struct( ...
-      'char',   {{'qchar', 1}}, ...
-      'int8',   {{'xi08', 1}}, ...
-      'int16',  {{'xi16', 2}}, ...
-      'int32',  {{'xi32', 4}}, ...
-      'int64',  {{'xi64', 8}}, ...
-      'uint8',  {{'xu08', 1}}, ...
-      'uint16', {{'xu16', 2}}, ...
-      'uint32', {{'xu32', 4}}, ...
-      'uint64', {{'xu64', 8}}, ...
-      'single', {{'xf32', 4}}, ...
-      'double', {{'xf64', 8}});
-
-    k_types_map_xmat = make_types_map_xmat();
   end
   
 
   methods (Static)
+    function out = isstringlike()
+      out = ischar(order_tag) || isstring(order_tag);
+    end
+
     function str = ljust(str, len, fillchar)
       % analog for Python.str.ljust:
       % Return the string left justified in a string of length width
@@ -87,22 +74,3 @@ classdef XUtil
   end
 end
 
-
-% fills xmat.XUtil.k_types_map_xmat()
-function S = make_types_map_xmat()
-  S = struct();
-  fields_ = fields(xmat.XUtil.k_types_map_native);
-  for n = 1:length(fields_)
-    a = fields_{n};
-    b = xmat.XUtil.k_types_map_native.(a);
-    key = b{1};
-    if key(1) == 'q'
-      S.(key) = {a, b{2}};
-    else
-      key(1) = 'r';
-      S.(key) = {a, b{2}};
-      key(1) = 'c';
-      S.(key) = {a, 2*b{2}};
-    end
-  end
-end

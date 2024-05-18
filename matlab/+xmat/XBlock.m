@@ -1,129 +1,139 @@
 classdef XBlock < handle
 
   properties
-    name
-    typename
-    typesize
-    shape
-    numel
-    ndim
+    morder    = 'C'   % o
+    tid       = 0     % t
+    ndim      = 0     % s
+    namelen   = 0     % b
+    shape     = 0     % Shape[ndim]
+    name      = ''    % Block Name[namelen]
 
-    pos
-    pos_data
+    pos       = 0
   end
-
-
-  methods (Static)
-    function bd = make(A, name, ndim_force)
-      % ndim_force: uint
-      %   requared ndims for array. matlab does reduce last-one dimentions
-      %   like bellow:
-      %     ndims(ones(2, 2, 2, 1, 1)) := 3
-      
-      if nargin < 2
-        name = 'default';
-      end
-      if nargin < 3
-        ndim_force = [];
-      end
-
-      typename = xmat.XUtil.native2xmat_type(A);
-      shape = size(A);
-      typesize = xmat.XUtil.k_types_map_xmat.(typename){2};
-      ndim = ndims(A);
-
-      if ~isempty(ndim_force)
-        if ndim_force < ndims(A)
-          error('xmat.XBlock.make(A). wrong ndim_force: %d', ndim_force);
-        end
-        shape(end + 1 : end + (ndim_force - ndim)) = 1;
-        ndim = ndim_force;
-      end
-      bd = xmat.XBlock.make_(name, typename, typesize, ndim, shape);
-    end
-
-    function bd = make_(name, typename, typesize, ndim, shape)
-      bd = xmat.XBlock();
-      bd.name = name;
-      bd.typename = typename;
-      bd.shape = shape;
-      bd.numel = prod(shape);
-      bd.typesize = typesize;
-      bd.ndim = ndim;
-    end
-  end
-
 
   methods
     function obj = XBlock()
       % pass
-    end
-
-    function obj = dump(obj, os)
-      % Parameters:
-      % -----------
-      % os: output stream
-      % h: xmat.Handle
-      if strlength(obj.name) > xmat.XUtil.k_max_block_name_len
-        error('too long block-name: len := %d, name := %s', strlength(obj.name), obj.name);
-      end
-      shape_ = [obj.shape  zeros(1, xmat.XUtil.k_max_ndim - length(obj.shape))];
-
-      os.write(xmat.XUtil.k_block_signature_begin);
-      os.write(xmat.XUtil.ljust(obj.name, xmat.XUtil.k_max_block_name_len));
-      os.write(xmat.XUtil.ljust(obj.typename, xmat.XUtil.k_max_type_name_len));
-      os.write(cast(shape_, xmat.XUtil.k_xsize_t_typename));
-      os.write(cast(obj.numel, xmat.XUtil.k_xsize_t_typename));
-      os.write(uint8(obj.typesize));
-      os.write(uint8(obj.ndim));
-      os.write(xmat.XUtil.k_block_signature_end);
-    end
-
-    function obj = load(obj, is)
-      % is: BufByte('r') or BufFile('r')
-      obj.pos = is.tell();
-      sig0 = is.read(1, xmat.XUtil.k_fmt_signature_size, 'char*1')';
-      if ~strcmp(sig0, xmat.XUtil.k_block_signature_begin)
-        error('xmat.XBlock.load(..). wrong signature begin: %s vs %', ...
-          sig0, xmat.XUtil.k_block_signature_begin);
-      end
-
-      obj.name      = is.read(1, xmat.XUtil.k_max_block_name_len, 'char*1')';
-      obj.typename  = is.read(1, xmat.XUtil.k_max_type_name_len, 'char*1')';
-      
-      obj.shape     = double(is.read(xmat.XUtil.k_xsize_t_size, ...
-                                     xmat.XUtil.k_max_ndim, ...
-                                     xmat.XUtil.k_xsize_t_typename))';
-
-      obj.numel     = double(is.read(xmat.XUtil.k_xsize_t_size, 1, ...
-                                     xmat.XUtil.k_xsize_t_typename));
-      
-      obj.typesize  = double(is.read(1, 1, 'uint8'));
-      obj.ndim      = double(is.read(1, 1, 'uint8'));
-      sig1          = is.read(1, xmat.XUtil.k_fmt_signature_size, 'char*1')';
-
-      if ~strcmp(sig1, xmat.XUtil.k_block_signature_end)
-        error('xmat.XBlock.load(..). wrong signature end: %s vs %', ...
-          sig0, xmat.XUtil.k_block_signature_end);
-      end
-
-      obj.name = xmat.XUtil.uljust(obj.name);
-      obj.typename = xmat.XUtil.uljust(obj.typename);
-      obj.shape(obj.ndim+1:end) = [];
-      if obj.numel ~= prod(obj.shape)
-        error('xmat.Block error. file. wrong numel');
-      end      
-      obj.pos_data = is.tell();
     end 
 
-    function print(obj, fid, args)
-      if nargin < 2
-        args.span = 1;
+    function obj = make(obj, A, name, ndim_force)
+      % ndim_force: uint
+      %   requared ndims for array. matlab reduces last-one dimentions
+      %   like bellow:
+      %     ndims(ones(2, 2, 2, 1, 1)) := 3
+      %   so, use `ndim_force` for fixing shape
+      
+      if nargin < 3
+        name = 'default';
       end
-      template = sprintf('%%%ss: <%%s, %%s> %%s', num2str(args.span));
+      
+      if nargin < 4
+        ndim_force = [];
+      end
 
-      class_ = xmat.XUtil.k_types_map_xmat.(obj.typename){1};
-      fprintf(fid, template, obj.name, class_, obj.typename, mat2str(obj.shape));
+      info = xmat.DataType.by_value(A);
+      if isempty(info)
+        error('wrong type %s\n', class(A));
+      end
+      
+      % obj.morder
+      obj.tid = info.id;
+      obj.ndim = ndims(A);
+      obj.namelen = strlength(name);
+      obj.shape = size(A);
+      obj.name = name;
+      
+      if ~isempty(ndim_force)   % ndim_force
+        if ndim_force < ndims(A)
+          error('xmat.XBlock.make(A). wrong ndim_force: %d', ndim_force);
+        end
+        obj.shape(end + 1 : end + (ndim_force - obj.ndim)) = 1;
+        obj.ndim = ndim_force;
+      end
+    end
+
+    function obj = dump(obj, ods)
+      % Parameters: 
+      % ods: DataStream_.Out
+      assert(any(obj.morder == 'CF'))
+      assert(~isempty(xmat.DataType.by_id(obj.tid)));
+      assert(obj.ndim == ndims(obj.shape));
+      assert(obj.namelen == length(obj.name));
+
+      ods.write(char(obj.morder));
+      ods.write(uint8(obj.tid));
+      ods.write(uint8(obj.ndim));
+      ods.write(uint8(obj.namelen));
+      ods.write(uint8(zeros(1, 4)));
+      ods.write(xmat.DataType.k_xsize_t(obj.shape));
+      ods.write(obj.name);
+    end
+
+    function obj = load(obj, ids)
+      obj.pos = ids.tell();
+      
+      obj.morder = ids.read(1, 'char');
+      if ~any(obj.morder == 'CF')
+        error('xmat.XBlock.load(): wrong `morder`');
+      end
+
+      obj.tid = double(ids.read(1, 'uint8'));
+      if isempty(xmat.DataType.by_id(obj.tid))
+        error('xmat.XBlock.load(): wrong `tid`');
+      end
+
+      obj.ndim = double(ids.read(1, 'uint8'));
+      obj.namelen = double(ids.read(1, 'uint8'));
+      zeros_ = ids.read(4, 'char');
+      if any(zeros_)
+        error('xmat.XBlock.load(): error in -zeros- bytes %s\n', zeros);
+      end
+      obj.shape = ids.read(obj.ndim, xmat.DataType.k_xsize_typename);
+      obj.name = ids.read(obj.namelen, 'char');
+    end
+
+    % getters
+    % ------------------------
+    function n = typesize(obj)
+      n = xmat.DataType.by_id(obj.tid).size;
+    end
+
+    function n = nbytes(obj)
+      n = 8 + xmat.DataType.k_sizeof_int * obj.ndim + strlength(obj.name);
+    end
+
+    function n = data_pos(obj)
+      n = obj.pos + obj.nbytes();
+    end
+
+    function n = data_nbytes(obj)
+      n = obj.typesize() * obj.numel();
+    end
+
+    function n = numel(obj)
+      n = prod(obj.shape);
+    end
+
+    function print(obj, fid, args)
+      % Example:
+      % ones(5, 6) + 1j >> name: <cx_double, tid>, [5, 6]
+      if nargin < 2
+        fid = 1;
+      end
+      if nargin < 3
+        args.span = 1;
+        args.end_ = '\n';
+      end
+      template = sprintf('%%%ss: <%%12s, %%s> %%s', num2str(args.span));
+      info = xmat.DataType.by_id(obj.tid);
+      info.typename = xmat.DataType.name(obj.tid);
+      fprintf(fid, template, obj.name, info.typename, ...
+              ['0x' dec2hex(obj.tid)], mat2str(obj.shape));
+      if isfield(args, 'end_')
+        fprintf(fid, args.end_);
+      end
     end
   end
 end
+
+

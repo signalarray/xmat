@@ -11,115 +11,96 @@ fprintf('%s\n', filename_script);
 
 folder_data = fullfile(folder_script, '..', '..', 'data');
 
-sample_3();
+sample_4();
 
 
 % group samples
 % -------
   function sample_0()
-    fprintf('sample_0: xmat.XHead: dump/load ');
-    filename_out = fullfile(folder_data, 'sample_0.xmat');
+    fprintf('sample_0: xmat.DataTypeReg \n');
 
-    % BufByte
-    h00 = xmat.XHead();
-    obbuf = xmat.BufByte.out();
-    h00.dump(obbuf);
-    obbuf.close();
-
-    ibbuf = xmat.BufByte.in();
-    ibbuf.set_buffer(obbuf.buff);
-    h01 = xmat.XHead();
-    h01.load(ibbuf)
-
-    % BufFile
-    h10 = xmat.XHead();
-    ofbuf = xmat.BufFile.out(filename_out);
-    h10.dump(ofbuf);
-    ofbuf.close();
-
-    ifbuf = xmat.BufFile.in(filename_out);
-    h11 = xmat.XHead();
-    h11.load(ifbuf)
   end
 
 
   function sample_1()
-    fprintf('sample_1: xmat.XBlock: make');
-    filename_out = fullfile(folder_data, 'sample_1.xmat');
+    fprintf('sample_0: xmat.DStreamByte\n');
+    
+    ods = xmat.DStreamByte.out();
+    ods.endian = xmat.Endian.little;
+    ods.write([1, 1i])
+    reshape(ods.buf(), 8, []).'
 
-    % XBlock.make()
-    bd0 = xmat.XBlock.make(1, 'a0')
-    bd1 = xmat.XBlock.make(ones(3, 4), 'a1')
-    bd2 = xmat.XBlock.make(ones(3, 4, 1, 1), 'a2')
-    bd3 = xmat.XBlock.make(ones(3, 4, 1, 1), 'a3', 4)
-
-    bd4 = xmat.XBlock.make('char', 's0')
-
+    ids = xmat.DStreamByte.in();
+    ids.set_buffer(ods.buf());
+    ids.read(2, 'cx_double')
   end
+
 
   function sample_2()
-    fprintf('sample_3: xmat.XBlock: dump/load ');
+    fprintf('sample_1: xmat.XHead: dump/load \n');
     filename_out = fullfile(folder_data, 'sample_2.xmat');
 
-    bd0 = xmat.XBlock.make(1, 'a0')
+    ods = xmat.DStreamByte.out();
+    ods.endian = xmat.Endian.native;
 
-    % dump / load
-    % -----------
-    % BufByte
-    bd_ = bd0;
-    obbuf = xmat.BufByte.out();
-    bd_.dump(obbuf);
-    obbuf.close();
+    h = xmat.XHead();
+    h.print();
+    h.dump(ods);
 
-    ibbuf = xmat.BufByte.in();
-    ibbuf.set_buffer(obbuf.buff);
-    bd0 = xmat.XBlock();
-    bd0.load(ibbuf)
+    ods.print(8)
 
-    % BufFile
-    ofbuf = xmat.BufFile.out(filename_out);
-    bd_.dump(ofbuf);
-    ofbuf.close();
-
-    ifbuf = xmat.BufFile.in(filename_out);
-    b1 = xmat.XBlock();
-    b1.load(ifbuf)
+    fprintf('XHead.load\n');
+    ids = xmat.DStreamByte.in();
+    ids.set_buffer(ods.buf());
+    h2 = xmat.XHead();
+    h2.load(ids);
+    h2.print();
   end
+
 
   function sample_3()
-    fprintf('sample_3: xmat.BugOut, xmat.BugIn\n');
+    fprintf('sample_1: xmat.XBlock: dump/load \n');
     filename_out = fullfile(folder_data, 'sample_3.xmat');
 
-    % BufByte
-    % ------
-    fprintf("\nBufByte\n===================================\n");
-    % BugOut
-    xout = xmat.BugOut.byte();
-    xout.setitem('a0', 1i);
-    xout.setitem('ab0', [1 2]);
-    xout.setitem('abc0', 1);
-    xout.setitem('long-name-field', 1);
-    xout.setitem('long-name-field------------', 1);
-    xout.close();
+    ods = xmat.DStreamByte.out();
+    ods.endian = xmat.Endian.native;
 
-    % BugIn
-    xin = xmat.BugIn.byte(xout.obuf.buf);
-    xin.print()
+    fprintf('xmat.XBlock: dump\n');
+    b0 = xmat.XBlock().make(1j, 'nameforblock');
+    b0.print()
 
-    % BufFile
-    % ------
-    fprintf("\nBufFile\n===================================\n");
-    % BugOut
-    xout = xmat.BugOut.file(filename_out);
-    xout.setitem('a0', 1);
-    xout.setitem('a1', 1i);
-    xout.close();
+    b0.dump(ods);
+    ods.print(8)
+    
+    fprintf('xmat.XBlock: load\n');
+    ids = xmat.DStreamByte.in();
+    ids.set_buffer(ods.buf());
 
-    % BugIn
-    xin = xmat.BugIn.file(filename_out);
-    xin.print()
+    b1 = xmat.XBlock().load(ids);
+    b1.print()
   end
 
+  
+  function sample_4()
+    fprintf('sample_4: xmat.MapStreamOut: \n');
+    filename_out = fullfile(folder_data, 'sample_3.xmat');
+
+    xout = xmat.MapStreamOut.byte();
+    xout.setitem('a0', uint8(1));
+    xout.setitem('a1', zeros(2, 3) + 1i);
+    xout.close();
+    xout.ods.print(8)
+
+    xin = xmat.MapStreamIn.byte(xout.ods.buf);
+    xin.print()
+  end
 % end samples
 % -----------
 end
+
+
+
+
+
+
+

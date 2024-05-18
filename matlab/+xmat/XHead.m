@@ -1,16 +1,13 @@
 classdef XHead < handle
 
   properties
-    fmt_signature       = xmat.XUtil.k_fmt_signature
-    xsize_t_size        = xmat.XUtil.k_xsize_t_size
-    max_block_name_len  = xmat.XUtil.k_max_block_name_len
-    max_type_name_len   = xmat.XUtil.k_max_type_name_len
-    max_ndim            = xmat.XUtil.k_max_ndim
-
-    total_size          = 0
-
-    xsize_t_type        = xmat.XUtil.k_xsize_t_type
-    xsize_t_typename    = xmat.XUtil.k_xsize_t_typename
+    % See: Header Format
+    signature   = xmat.DataType.k_signature       % Sign
+    bom         = xmat.DataType.k_bom             % BOM
+    total       = 0                               % Total Size
+    sizeof_int  = xmat.DataType.k_sizeof_int      % I
+    maxndim     = xmat.DataType.k_max_ndim        % S
+    maxname     = xmat.DataType.k_max_name        % B
   end
 
 
@@ -18,36 +15,38 @@ classdef XHead < handle
     function obj = XHead()
     end
 
-    function obj = dump(obj, os)
-      % os: output stream/file
-      os.write(uint64(0));
-      os.write(xmat.XUtil.k_fmt_signature);
-      os.write(uint8(obj.xsize_t_size));
-      os.write(uint8(obj.max_block_name_len));
-      os.write(uint8(obj.max_type_name_len));
-      os.write(uint8(obj.max_ndim));
-      os.write(xmat.XUtil.k_fmt_signature);
+    function obj = dump(obj, ods)
+      % Parameters: 
+      % ods: DataStream_.Out
+      if length(obj.signature) ~= xmat.DataType.k_signature_size
+        error("xmat.XHead.dump(): wrong size length %d\n", ...
+              length(length(obj.signature)));
+      end
+
+      ods.write(obj.signature);
+      ods.write(uint16(obj.bom));
+      ods.write(xmat.DataType.k_xsize_t(obj.total));
+      ods.write(uint8(obj.sizeof_int));
+      ods.write(uint8(obj.maxndim));
+      ods.write(uint8(obj.maxname));
     end
 
-    function obj = load(obj, is)
-      % is: input stream/file
-      obj.total_size      = double(is.read(8, 1, 'uint64'));
-      obj.fmt_signature   = is.read(1, xmat.XUtil.k_fmt_signature_size, 'char*1')';
-      if ~strcmp(obj.fmt_signature, xmat.XUtil.k_fmt_signature)
-        error('xmat.XHead.load(). wrong fmt_signature: %s vs %', ...
-          obj.fmt_signature, xmat.XUtil.k_fmt_signature_size);
-      end
-      obj.xsize_t_size        = double(is.read(1, 1, 'uint8'));
-      obj.max_block_name_len  = double(is.read(1, 1, 'uint8'));
-      obj.max_type_name_len   = double(is.read(1, 1, 'uint8'));
-      obj.max_ndim            = double(is.read(1, 1, 'uint8'));
-      
-      sig1 = is.read(1, xmat.XUtil.k_fmt_signature_size, 'char*1')';
-      if ~strcmp(sig1, obj.fmt_signature)
-        error('xmat.XHead.load(). wrong fmt_signature. (in the end)');
+    function obj = load(obj, ids)
+      % ods: DataStream_.In
+      obj.signature = ids.read(xmat.DataType.k_signature_size, 'char')';
+      if ~strcmp(obj.signature, xmat.DataType.k_signature)
+        error('xmat.XHead.load(): wrong signature `%s`\n', obj.signature);
       end
 
-      % check header is consistent
+      obj.bom = double(ids.read(1, 'uint16'));
+      obj.total = double(ids.read(1, xmat.DataType.k_xsize_typename));
+      obj.sizeof_int = double(ids.read(1, 'uint8'));
+      obj.maxndim = double(ids.read(1, 'uint8'));
+      obj.maxname = double(ids.read(1, 'uint8'));
+
+      if obj.sizeof_int ~= xmat.DataType.k_sizeof_int
+        error("xmat.XHead.load(): wrong sizeof_int %d\n", obj.sizeof_int);
+      end
     end
 
     function print(obj, fid)
@@ -55,12 +54,12 @@ classdef XHead < handle
         fid = 1;
       end
       fprintf(fid, 'xmat.XHead:\n');
-      fprintf(fid, '%24s: %d\n', 'total', obj.total_size);
-      fprintf(fid, '%24s: `%s`\n', 'signature', obj.fmt_signature);
-      fprintf(fid, '%24s: %d\n', 'sizeof(xsize_t)', obj.xsize_t_size);
-      fprintf(fid, '%24s: %d\n', 'max_block_name', obj.max_block_name_len);
-      fprintf(fid, '%24s: %d\n', 'max_type_name', obj.max_type_name_len);
-      fprintf(fid, '%24s: %d\n', 'max_ndim', obj.max_ndim);
+      fprintf(fid, '%24s: `%s`\n', 'signature', obj.signature);
+      fprintf(fid, '%24s: %d\n', 'bom',         obj.bom);
+      fprintf(fid, '%24s: %d\n', 'total',       obj.total);
+      fprintf(fid, '%24s: %d\n', 'sizeof_int',  obj.sizeof_int);
+      fprintf(fid, '%24s: %d\n', 'maxndim',     obj.maxndim);
+      fprintf(fid, '%24s: %d\n', 'maxname',     obj.maxname);
     end
   end
 end
