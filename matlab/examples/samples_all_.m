@@ -82,25 +82,50 @@ sample_4();
 
   
   function sample_4()
-    fprintf('sample_4: xmat.MapStreamOut: \n');
-    filename_out = fullfile(folder_data, 'sample_3.xmat');
+    fprintf('sample_4: xmat.MapStreamOut/In: \n');
+    filename_out = fullfile(folder_data, 'sample_4.xmat');
+
+    X = reshape(1:6, 3, 2);
+    Xi = X + 1i;
+    disp(X)
+    disp(Xi)
 
     xout = xmat.MapStreamOut.byte();
-    xout.setitem('a0', uint8(1));
-    xout.setitem('a1', zeros(2, 3) + 1i);
+    xout.setitem('a00', X);
+    xout.setitem('a01', Xi);
+    xout.morder = 'C';
+    xout.setitem('a10', X);
+    xout.flipshape = true;
+    xout.setitem('a11', X);
     xout.close();
     xout.ods.print(8)
 
     xin = xmat.MapStreamIn.byte(xout.ods.buf);
     xin.print()
+    y00 = xin.getitem('a00')
+    xmat.XBlock().make(y00).print()
+
+    y01 = xin.getitem('a01')
+    xmat.XBlock().make(y01).print()
+
+    fprintf('non-flipshape\n');
+    y10 = xin.getitem('a10')
+    xmat.XBlock().make(y10).print()
+
+    y11 = xin.getitem('a11')
+    xmat.XBlock().make(y11).print()
+    
+    fprintf('allow flipshape\n');
+    xin.flipshape = true;
+    y10 = xin.getitem('a10')
+    xmat.XBlock().make(y10).print()
+
+    y11 = xin.getitem('a11')
+    xmat.XBlock().make(y11).print()
   end
 % end samples
 % -----------
 end
-
-
-
-
 
 
 

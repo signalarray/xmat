@@ -1,10 +1,30 @@
 classdef MapStreamOut < handle
+  % Properties:
+  % -----------
+  % morder: 'C' or 'F', optional(default := obj.morder)
+  %   major element order
+  %   `F` - default. `F` - says save element order as F-order, and flip shape instead.
+  %
+  % flipshape: logical, optional(default := false)
+  %   if `morder` ~= 'F' && flipshape == true, it will not permute
+  %   elemente, but flip size(A) instread.
+  %
+  % Desctiption:
+  % ------------
+  %      \flipshape:  true          false
+  % morder---------:--------------------------
+  %             'C':  flip(shape)   permute(A)
+  %             'F':  nothing       nothing
 
   properties
     ods     % output data stream
     head
     is_open = true
     names_list = ""
+    
+    % format options
+    morder = xmat.DataType.k_morder
+    flipshape = false
   end
 
 
@@ -34,51 +54,47 @@ classdef MapStreamOut < handle
       end
     end
 
-    function setitem(obj, name, A, ndim_force, order_tag)
-      % write A to ostream
+    function setitem(obj, name, A, ndim_force)
       % Parameters:
       % -----------
-      % name: char
+      % name: string-like
+      %
       % A: value
-      % ndim_force: int
-      %   matlab reduce last 1th dimentions (ndims(ones(2, 2, 1) -> 2, but not 3)). `ndim_force` set dim explicitly
-      % order_tag: 'C' or 'F'
-      %   `F` - default. `F` - says save element order as F-order, and flip shape instead.
-
-      % check
-      % -----   
+      %
+      % ndim_force: int, optional(default := [])
+      %   matlab reduce last 1th dimentions (ndims(ones(2, 2, 1) -> 2, but not 3)).
+      %   `ndim_force` set dim explicitly
 
       if nargin < 4
         ndim_force = [];
-      end
-
-      if nargin < 5 || isempty(order_tag)
-        order_tag = 'F';
-      elseif ~xmat.XUtil.isstringlike(order_tag)
-        error('wrong `order_tag`.type');
       end
 
       if strlength(name) > obj.head.maxname
         error('xmat.MapStreamOut.setitem(): too long block-name: max := %d, len := %d, name := %s', ...
           xmat.head.maxname, strlength(name), name);
       end
-
+      
+      % ----
       if any(name == obj.names_list)
         warning("name is already in: %s", name);
       end
       obj.names_list(end + 1) = name;
 
-      if ~any(strcmp(order_tag, ["C", "F"]))
-        error('wrong order tag: %s', order_tag);
+      if ~any(strcmp(obj.morder, ["C", "F"]))
+        error('wrong order tag: %s', obj.morder);
       end
 
-      % dump
-      % ----
+      % dump 1d
       bd = xmat.XBlock().make(A, name, ndim_force);
-			if order_tag == 'C'
-				bd.shape = flip(bd.shape);
-			else
-				A = permute(A, ndims(A):-1:1);
+      bd.morder = obj.morder;
+
+      % process morder and shape
+			if bd.morder == 'C'
+        if obj.flipshape
+				  bd.shape = flip(bd.shape);
+        else
+				  A = permute(A, ndims(A):-1:1);
+        end
 			end
       bd.dump(obj.ods);
 

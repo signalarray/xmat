@@ -48,6 +48,7 @@ classdef DataType
       k_bom             = hex2dec('01')
       k_sizeof_int      = length(typecast(xmat.DataType.k_xsize_t(0), 'int8'))
 
+      k_morder          = 'F'
       k_max_ndim        = 8   % for default value
       k_max_name        = 32  % for default value
   end

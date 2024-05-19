@@ -6,6 +6,9 @@ classdef MapStreamIn < handle
     is_open
 
     map
+
+    % format options
+    flipshape = false
   end
   
 
@@ -46,24 +49,19 @@ classdef MapStreamIn < handle
       end
     end
 
+    function delete(obj)
+      if obj.is_open
+        obj.close();
+      end
+    end
+
     function obj = push_buffer(obj, buf)
       obj.ids.push_buffer(buf);
     end
 
-    % ---------------------------------------
-    function A = getitem(obj, name, order_tag)
-		  % order_tag: 'C' or 'F'
-      %   `F` - default. `C` - says save element order as F-order, and flip shape instead.
-      
-      if nargin < 3
-        order_tag = 'F';
-      end
-      if ~any(strcmp(order_tag, ["C", "F"]))
-        error('xmat.MapStreamIn.getitem(): wrong order tag: %s', order_tag);
-      end
-
+    function A = getitem(obj, name)
       if ~xmat.XUtil.isstringlike(name)
-        errror('xmat.MapStreamIn.getitem(): wrong `name` type: %s, string-like expected', class(name));
+        error('xmat.MapStreamIn.getitem(): wrong `name` type: %s, string-like expected', class(name));
       end
       
       if ~isKey(obj.map, name)
@@ -72,26 +70,24 @@ classdef MapStreamIn < handle
       end
 
       % load data block
-      % ------------------
+      % -----------------
       bd = obj.map(name);
       obj.ids.seek(bd.data_pos(), -1);
-      info = xmat.DataType.by_id(bd.tid);
       A = obj.ids.read(bd.numel(), bd.tid);
-      if xmat.DataType.iscomplex(info.id)
-        if any(info.label(1) == ["I", "U"])
-          warning('xmat.MapStreamIn.getitem(): block: %s. complex<int>. data casted to complex<double>', ...
-                   name, xmat.DataType.name(bd.tid));
-          A = cast(A, 'double');
-        end
-        A = complex(A(1:2:end), A(2:2:end));
-      end
 
-      % not ready !!!
-      if order_tag == 'F' % default
-        A = permute(reshape(A, flip(bd.shape)), length(bd.shape) : -1 : 1);
-      else
-        bd.shape = flip(bd.shape);
+      % process morder and shape
+      if bd.morder == 'C'
+        if obj.flipshape
+          bd.shape = flip(bd.shape);
+          A = reshape(A, bd.shape);
+        else
+          A = reshape(A, flip(bd.shape));
+          A = permute(A, length(bd.shape):-1:1);
+        end
+      elseif bd.morder == 'F'
         A = reshape(A, bd.shape);
+      else
+        error("");
       end
     end
 
@@ -126,6 +122,11 @@ classdef MapStreamIn < handle
       if obj.ids.tell() ~= obj.head.total
         error('xmat.MapStreamIn.scan_data(): failed');
       end
+    end
+
+    function close(obj)
+      obj.ids.close();
+      obj.is_open = false;
     end
 
     function print(obj, fid)

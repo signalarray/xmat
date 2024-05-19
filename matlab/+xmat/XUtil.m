@@ -27,8 +27,8 @@ classdef XUtil
   
 
   methods (Static)
-    function out = isstringlike()
-      out = ischar(order_tag) || isstring(order_tag);
+    function out = isstringlike(str)
+      out = ischar(str) || isstring(str);
     end
 
     function str = ljust(str, len, fillchar)

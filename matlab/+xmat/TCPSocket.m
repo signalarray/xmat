@@ -1,5 +1,11 @@
-classdef TCPSocket_ < handle
-    
+classdef TCPSocket < handle
+  
+  properties (Constant)
+    k_xsbuf_size = 1024
+    k_xport = 27015
+    k_xport_str = '27015'
+  end
+
   properties
     socket
     % socket.UserData - packets received
@@ -12,7 +18,7 @@ classdef TCPSocket_ < handle
   
 
   methods (Static)
-    function tcpsock = server(address, port, varargin)
+    function tcpsock = server(address, port)
       % Parameters
       % ----------
       % address: {string/char, []} OR int
@@ -39,7 +45,7 @@ classdef TCPSocket_ < handle
           address = '::';
         end
       end
-      tspsock = xmat.TCPSocket_('server', address, port, varargin{:});
+      tcpsock = xmat.TCPSocket('server', address, port);
     end
 
     function tcpsock = client(address, port, varargin)
@@ -48,13 +54,13 @@ classdef TCPSocket_ < handle
       % address: string
       %   use "localhost" with local server
 
-      tcpsock = xmat.TCPSocket_('client', address, port, varargin{:});
+      tcpsock = xmat.TCPSocket('client', address, port);
     end
   end
 
 
   methods
-    function obj = TCPSocket_(mode, address, port, varargin)
+    function obj = TCPSocket(mode, address, port)
       % Parameters:
       % -----------
       % mode: {'server', 'client'}
@@ -71,9 +77,10 @@ classdef TCPSocket_ < handle
       end
 
       if strcmp(mode, 'server')
-        connection = tcpserver(address, port, varargin{:});
+        connection = tcpserver(address, port, ...
+          "ConnectionChangedFcn", @connection_callback_server);
       elseif strcmp(mode, 'client')
-        connection = tcpclient(address, port, varargin{:});
+        connection = tcpclient(address, port);
       else 
         error('wrong `mode` value');
       end
@@ -83,28 +90,23 @@ classdef TCPSocket_ < handle
       obj.isserver = isa(obj.socket, 'tcpserver');
     end
 
-
     function delete(obj)
       fprintf('class `%s` destructor was called\n', mfilename);
       obj.close();      
     end
 
-
     function close(obj)
       delete(obj.socket);
       clear obj.connection;
     end    
-
     
     function res = isempty(obj)
-      res = isempty(obj.content) && obj.socket.NumBytesAvailable == 0;
+      res = isempty(obj.content__) && obj.socket.NumBytesAvailable == 0;
     end
-
 
     function xm = pop(obj)
       
     end
-
 
     function send(obj, bugout)
       % Parameters
@@ -160,7 +162,7 @@ classdef TCPSocket_ < handle
       %  if mode := false   callback is off
 
       if mode
-        configureCallback(obj.socket, "byte", xmat.XUtil.k_head_size, @obj.recv_push);
+        configureCallback(obj.socket, "byte", xmat.XHead.nbytes(), @obj.recv_push);
       else
         configureCallback(t, "off");
       end
@@ -178,9 +180,16 @@ classdef TCPSocket_ < handle
         dbuff = uint8(read(obj.socket, xin.h.total_size-xmat.XUtil.k_head_size, 'char'))';
         xin.istream.buff = [xin.istream.buff; dbuff];
         xin.scan_data();
-        obj.content{end+1} = xin;
+        obj.content__{end+1} = xin;
         count = count + 1;
       end
     end
   end
+end
+
+
+function connection_callback_server(src, ~)
+if src.Connected
+  fprintf("xmat.TCPSocket.server() connected: %s\n", src.CientAddress);
+end
 end

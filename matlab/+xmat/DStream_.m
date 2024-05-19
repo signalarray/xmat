@@ -59,7 +59,13 @@ classdef DStream_ < handle
       % call abstract
       [A, numel] = obj.do_read(numel, typeinfo);
 
+      % complex-number issues
       if xmat.DataType.iscomplex(typeinfo.id)
+        if any(typeinfo.label(1) == ["I", "U"]) % integers
+          warning('xmat.MapStreamIn.getitem(): block: `%s`. complex<int>. `%s` casted to complex<double>', ...
+                   name, name);
+          A = cast(A, 'double');
+        end
         A = complex(A(1:2:end), A(2:2:end));
       end
     end

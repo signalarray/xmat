@@ -10,6 +10,11 @@ classdef XHead < handle
     maxname     = xmat.DataType.k_max_name        % B
   end
 
+  methods (Static)
+    function n = nbytes()
+      n = 17;
+    end
+  end
 
   methods
     function obj = XHead()

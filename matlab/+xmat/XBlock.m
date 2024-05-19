@@ -1,12 +1,12 @@
 classdef XBlock < handle
 
   properties
-    morder    = 'C'   % o
-    tid       = 0     % t
-    ndim      = 0     % s
-    namelen   = 0     % b
-    shape     = 0     % Shape[ndim]
-    name      = ''    % Block Name[namelen]
+    morder    = xmat.DataType.k_morder  % o
+    tid       = 0                       % t
+    ndim      = 0                       % s
+    namelen   = 0                       % b
+    shape     = 0                       % Shape[ndim]
+    name      = ''                      % Block Name[namelen]
 
     pos       = 0
   end
@@ -88,8 +88,8 @@ classdef XBlock < handle
       if any(zeros_)
         error('xmat.XBlock.load(): error in -zeros- bytes %s\n', zeros);
       end
-      obj.shape = ids.read(obj.ndim, xmat.DataType.k_xsize_typename);
-      obj.name = ids.read(obj.namelen, 'char');
+      obj.shape = ids.read(obj.ndim, xmat.DataType.k_xsize_typename).';
+      obj.name = ids.read(obj.namelen, 'char').';
     end
 
     % getters
@@ -116,7 +116,7 @@ classdef XBlock < handle
 
     function print(obj, fid, args)
       % Example:
-      % ones(5, 6) + 1j >> name: <cx_double, tid>, [5, 6]
+      % ones(5, 6) + 1j >> name: <cx_double, tid>, F:[5, 6]
       if nargin < 2
         fid = 1;
       end
@@ -124,11 +124,11 @@ classdef XBlock < handle
         args.span = 1;
         args.end_ = '\n';
       end
-      template = sprintf('%%%ss: <%%12s, %%s> %%s', num2str(args.span));
+      template = sprintf('%%%ss: %%12s(%%s) %%s:%%s', num2str(args.span));
       info = xmat.DataType.by_id(obj.tid);
       info.typename = xmat.DataType.name(obj.tid);
       fprintf(fid, template, obj.name, info.typename, ...
-              ['0x' dec2hex(obj.tid)], mat2str(obj.shape));
+              ['0x' dec2hex(obj.tid)], obj.morder, mat2str(obj.shape));
       if isfield(args, 'end_')
         fprintf(fid, args.end_);
       end
