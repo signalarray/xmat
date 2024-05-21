@@ -27,15 +27,26 @@ classdef MapStreamOut < handle
     flipshape = false
   end
 
+  properties (Dependent)
+    endian
+  end
 
   methods (Static)
-    function xout = file(filename)
+    function xout = file(filename, endian)
+      if nargin < 2
+        endian = xmat.Endian.native;
+      end
       stream = xmat.DStreamFile(filename, 'w');
+      stream.endian = endian;
       xout = xmat.MapStreamOut(stream);
     end
 
-    function xout = byte()
+    function xout = byte(endian)
+      if nargin < 1
+        endian = xmat.Endian.native;
+      end
       stream = xmat.DStreamByte('w');
+      stream.endian = endian;
       xout = xmat.MapStreamOut(stream);
     end
   end
@@ -52,6 +63,17 @@ classdef MapStreamOut < handle
       if obj.is_open
         obj.close();
       end
+    end
+
+    function e = get.endian(obj)
+      e = obj.ods.endian;
+    end
+
+    function set.endian(obj, endian)
+      if ~any(endian == 'lb')
+        errror("xmat.MapStreamOut.set.endian: wrong `endian` value");
+      end
+      obj.ods.endian = endian;
     end
 
     function setitem(obj, name, A, ndim_force)

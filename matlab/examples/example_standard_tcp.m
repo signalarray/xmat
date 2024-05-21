@@ -1,4 +1,4 @@
-function example_1_standard_client_server(mode)
+function example_standard_tcp(mode)
 % example for echo-server and client exchanging with native matlab char array.
 % works in echo mode
 %
@@ -9,8 +9,8 @@ function example_1_standard_client_server(mode)
 % 
 % Examples:
 % ---------
-% example_1_server_echo("client")
-% example_1_server_echo("server")
+% example_standard_tcp("client")
+% example_standard_tcp("server")
 
 close all
 

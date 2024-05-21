@@ -3,7 +3,8 @@ classdef Endian
   properties (Constant)
     little  = 'l'
     big     = 'b'
-    native  = xmat.byteorder()
+    native  = byteorder()
+    notnative = xmat.Endian.other(xmat.Endian.native)
   end
 
 
@@ -21,5 +22,24 @@ classdef Endian
         X = swapbytes(X);
       end
     end
+
+    function endian = other(endian)
+      if endian == xmat.Endian.little
+        endian = xmat.Endian.big;
+      else
+        endian = xmat.Endian.little;
+      end
+    end
   end
+end
+
+
+function out = byteorder()
+x = uint16(1);
+x = typecast(x, 'uint8');
+if x(1) == 1
+  out = 'l';
+else
+  out = 'b';
+end
 end

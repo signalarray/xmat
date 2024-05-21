@@ -124,11 +124,11 @@ classdef XBlock < handle
         args.span = 1;
         args.end_ = '\n';
       end
-      template = sprintf('%%%ss: %%12s(%%s) %%s:%%s', num2str(args.span));
+      template = sprintf('%%%ss: id:%%s %%12s %%s:%%s', num2str(args.span));
       info = xmat.DataType.by_id(obj.tid);
       info.typename = xmat.DataType.name(obj.tid);
-      fprintf(fid, template, obj.name, info.typename, ...
-              ['0x' dec2hex(obj.tid)], obj.morder, mat2str(obj.shape));
+      fprintf(fid, template, obj.name, ['0x' dec2hex(obj.tid, 2)], info.typename, ...
+              obj.morder, mat2str(obj.shape));
       if isfield(args, 'end_')
         fprintf(fid, args.end_);
       end

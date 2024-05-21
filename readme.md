@@ -1,11 +1,13 @@
 TODO
 ====
-- [+-] matlab. TCPSocket support
-- [+-] cpp TCPSocket non-blocking mode
-- change data format implementation
-- add big-little endian support
-- check .cpp BugOut<file>
-
+```
+cpp:
+- [+++++-----] cpp TCP full test
+- [++++++++--] change data format implementation
+- [+++++++++-] add big-little endian support
+- [++++------] check MapStream<file>
+- [++++------] check NArray->serial
+```
 
 # XMAT Format Description
 ```
@@ -76,8 +78,6 @@ id    sizeof  label   name
 # 00-15
 0x00  1       c       char
 0x01  1       ?       bool
-...   .       .       ...
-0x0F  x       x       unused
 
 # 16-31: i (*)
 0x10  1       i0      int8
@@ -85,8 +85,6 @@ id    sizeof  label   name
 0x12  4       i2      int32
 0x13  8       i3      int64
 0x14  16      i4      int128
-...   .       .       ...
-0x1F  x       x       unused
 
 # 32-47: I
 0x20  2       I0      complex int8
@@ -94,8 +92,6 @@ id    sizeof  label   name
 0x22  8       I2      complex int32
 0x23  16      I3      complex int64
 0x24  32      I4      complex int128
-...   .       .       ...
-0x2F  x       x       unused
 
 # 48-63: u
 0x30  1       u0      unsigned int8
@@ -103,8 +99,6 @@ id    sizeof  label   name
 0x32  4       u2      unsigned int32
 0x33  8       u3      unsigned int64
 0x34  16      u4      unsigned int128
-...   .       .       ...
-0x3F  x       x       unused
 
 # 64-79: U
 0x40  2       U0      complex unsigned int8
@@ -112,24 +106,18 @@ id    sizeof  label   name
 0x42  8       U2      complex unsigned int32
 0x43  16      U3      complex unsigned int64
 0x44  32      U4      complex unsigned int128
-...   .       .       ...
-0x4F  x       x       unused
 
 # 80-95: f
 0x50  1       f0      float8(**)
 0x51  2       f1      float16(**)
 0x52  4       f2      float32
 0x53  8       f3      float64
-...   .       .       ...
-0x5F  x       x       unused
 
 # 96-111: F
 0x60  2       F0      complex float8
 0x61  4       F1      complex float16
 0x62  8       F2      complex float32
 0x63  16      F4      complex float64
-...   .       .       ...
-0x6F  x       x       unused
 
 *:
 ik: nbits = 8*2^k. 

@@ -4,6 +4,7 @@ classdef MapStreamIn < handle
     ids
     head
     is_open
+    exeptions = true
 
     map
 
@@ -11,6 +12,9 @@ classdef MapStreamIn < handle
     flipshape = false
   end
   
+  properties (Dependent)
+    endian
+  end
 
   methods (Static)
     function xin = file(filename)
@@ -55,6 +59,13 @@ classdef MapStreamIn < handle
       end
     end
 
+    function e = get.endian(obj)
+      e = obj.ids.endian;
+    end
+
+
+    % read issues
+    % ----------------------------------
     function obj = push_buffer(obj, buf)
       obj.ids.push_buffer(buf);
     end
@@ -65,6 +76,9 @@ classdef MapStreamIn < handle
       end
       
       if ~isKey(obj.map, name)
+        if obj.exeptions
+          error('xmat.MapStreamIn.getitem(name): Unrecognized field name `%s`.', name);
+        end
         A = [];
         return;
       end
@@ -108,6 +122,9 @@ classdef MapStreamIn < handle
 
     function scan_header(obj)
       obj.head = obj.head.load(obj.ids);
+      if obj.head.total < xmat.XHead.nbytes()
+        error('xmat.MapStreamIn.scan_data(): `totla_size` is too short %d\n', obj.head.total);
+      end
     end
 
     function scan_data(obj)

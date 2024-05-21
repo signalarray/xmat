@@ -43,7 +43,20 @@ classdef XHead < handle
         error('xmat.XHead.load(): wrong signature `%s`\n', obj.signature);
       end
 
-      obj.bom = double(ids.read(1, 'uint16'));
+      % endianess issues
+      obj.bom = ids.read(1, 'uint16');
+      if obj.bom ~= xmat.DataType.k_bom
+        ids.endian = xmat.Endian.other(ids.endian);
+        bom_ = xmat.Endian.set(obj.bom, ids.endian);
+        if bom_ ~= xmat.DataType.k_bom
+          error('xmat.XHead.load(): wrong `bom` value\n');
+        end
+        warning('xmat.XHead.load():  wrong endian value `%s` changed to: `%s`\n', ...
+                 xmat.Endian.other(ids.endian), ids.endian);
+        obj.bom = bom_;
+      end
+      obj.bom = double(obj.bom);
+
       obj.total = double(ids.read(1, xmat.DataType.k_xsize_typename));
       obj.sizeof_int = double(ids.read(1, 'uint8'));
       obj.maxndim = double(ids.read(1, 'uint8'));

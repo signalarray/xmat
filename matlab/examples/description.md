@@ -3,33 +3,21 @@
 ```
 EXAMPLES
 --------
-example_1_standard_client_server.m
+example_standard_tcp.m
   example for echo-server and client exchanging with native matlab char array.
 
-example_2_xmat_client_server.m
-  example for echo-server and client exchanging xmat-protocol messages.
+example_tcpsocket.m
+  example of using xmat.TCPSocket with xmat.MapStream as a message.
 
-example_3_file.m 
-  working with file
-
+example_tcp_callback.m
+  example app for using with xmat.TCPSocket as callback parameter. 
+  Used in `example_tcpsocket.m`
 
 STAFF
 -----
 samples_all.m 
   just for testing 
 
-samples_supported_types.m
-  test structure with all possible types can be used with xmat-format.
-
 temp_data_folder.m
   auto generated function. return the comman folder for data storage in the project.
 ```
-
-XHead
-XBlock
-TCPSocket
-BugIn
-BugOut
-BufByte
-BufFile
-XUtil

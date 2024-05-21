@@ -11,96 +11,170 @@ fprintf('%s\n', filename_script);
 
 folder_data = fullfile(folder_script, '..', '..', 'data');
 
-sample_3();
+sample_4();
 
 
+% group samples
+% -------
   function sample_0()
-    fprintf('sample_0\n');
-    filename_out = fullfile(folder_data, 'sample_0.xmat');
+    fprintf('sample_0: xmat.DataTypeReg \n');
 
-    os = xmat.StreamFile(filename_out, 'w');
-    
-    h = xmat.Header()
-    h.write(os);
-    os.close();
-
-    is = xmat.StreamFile(filename_out, 'r')
-    h2 = xmat.Header.read(is)
-    is.close();
   end
 
 
   function sample_1()
-    fprintf('sample_1: test xmat.StreamFile\n');
-    filename_out = fullfile(folder_data, 'sample_1.xmat');
-
-    os = xmat.StreamFile(filename_out, 'w');
+    fprintf('sample_0: xmat.DStreamByte\n');
     
-    h = xmat.Header();
-    bd = xmat.Block('blockname', 'typename', 4, 2, [2, 2])
-    bd.write(os, h);
-    os.close();
+    ods = xmat.DStreamByte.out();
+    ods.endian = xmat.Endian.little;
+    ods.write([1, 1i])
+    reshape(ods.buf(), 8, []).'
 
-    is = xmat.StreamFile(filename_out, 'r')
-    h2 = xmat.Block.read(is, h)
-    is.close();
+    ids = xmat.DStreamByte.in();
+    ids.set_buffer(ods.buf());
+    ids.read(2, 'cx_double')
   end
 
 
   function sample_2()
-    fprintf('sample_2: test xmat.StreamBytes\n');
+    fprintf('sample_1: xmat.XHead: dump/load \n');
+    filename_out = fullfile(folder_data, 'sample_2.xmat');
 
-    os = xmat.StreamBytes('w');
+    ods = xmat.DStreamByte.out();
+    ods.endian = xmat.Endian.native;
+
+    h = xmat.XHead();
+    h.print();
+    h.dump(ods);
+
+    ods.print(8)
+
+    fprintf('XHead.load\n');
+    ids = xmat.DStreamByte.in();
+    ids.set_buffer(ods.buf());
+    h2 = xmat.XHead();
+    h2.load(ids);
+    h2.print();
+  end
+
+
+  function sample_3()
+    fprintf('sample_1: xmat.XBlock: dump/load \n');
+    filename_out = fullfile(folder_data, 'sample_3.xmat');
+
+    ods = xmat.DStreamByte.out();
+    ods.endian = xmat.Endian.native;
+
+    fprintf('xmat.XBlock: dump\n');
+    b0 = xmat.XBlock().make(1j, 'nameforblock');
+    b0.print()
+
+    b0.dump(ods);
+    ods.print(8)
     
-    h = xmat.Header();
-    bd = xmat.Block('blockname', 'typename', 4, 2, [2, 2])
-    bd.write(os, h);
+    fprintf('xmat.XBlock: load\n');
+    ids = xmat.DStreamByte.in();
+    ids.set_buffer(ods.buf());
 
-    is = xmat.StreamBytes('r', os.buff)
-    h2 = xmat.Block.read(is, h)
+    b1 = xmat.XBlock().load(ids);
+    b1.print()
   end
 
   
-  function sample_3()
-    fprintf('sample_3: test xmat.Save\n');
-    filename_out = fullfile(folder_data, 'sample_2.xmat');
-    
-    mode = 'f';  % {'b', 'f'}
-    if mode == 'b'
-      xout = xmat.Output.from_bytes();
-    else
-      xout = xmat.Output.from_file(filename_out);
-    end
+  function sample_4()
+    fprintf('sample_4: xmat.MapStreamOut/In: \n');
+    filename_out = fullfile(folder_data, 'sample_4.xmat');
 
-    xout.setitem('field_0', uint8(1:4));
-    xout.setitem('field_1', randi(8, [3, 5]));
-    xout.setitem('field_2', randi(8, [2, 3], 'uint8'));
-    xout.setitem('field_3', complex(1:8, 8:-1:1));
-    xout.setitem('field_4', 'asdads');
+    X = reshape(1:6, 3, 2);
+    Xi = X + 1i;
+    disp(X)
+    disp(Xi)
+
+    xout = xmat.MapStreamOut.byte(xmat.Endian.big);
+    xout.setitem('a00', X);
+    xout.setitem('a01', Xi);
+    xout.morder = 'C';
+    xout.setitem('a10', X);
+    xout.flipshape = true;
+    xout.setitem('a11', X);
     xout.close();
+    xout.ods.print(8)
 
-    if mode == 'b'
-      xin = xmat.Input.from_bytes(xout.ostream.buff);
-    else
-      xin = xmat.Input.from_file(filename_out);
-    end
-    disp(xin.map)
+    xin = xmat.MapStreamIn.byte(xout.ods.buf);
+    xin.print()
+    return
+
+    y00 = xin.getitem('a00')
+    xmat.XBlock().make(y00).print()
+
+    y01 = xin.getitem('a01')
+    xmat.XBlock().make(y01).print()
+
+    fprintf('non-flipshape\n');
+    y10 = xin.getitem('a10')
+    xmat.XBlock().make(y10).print()
+
+    y11 = xin.getitem('a11')
+    xmat.XBlock().make(y11).print()
     
-    a0 = xin.getitem('field_0')
-    a1 = xin.getitem('field_1')
-    a2 = xin.getitem('field_2')
-    a3 = xin.getitem('field_3')
-    a4 = xin.getitem('field_4')
-    
-    if mode == 'b'
-      % load Header and Blocks in separate way
-      hbuff = xout.ostream.buff(1:xmat.Header.k_SIZEB);
-      lbuff = xout.ostream.buff(xmat.Header.k_SIZEB+1:end);
-      
-      h = xmat.Header.read(xmat.StreamBytes('r', hbuff));
-      xin2 = xmat.Load(xmat.StreamBytes('r', lbuff), h);
-      disp(xin2.map)
-      a0 = xin2.getitem('field_0')
-    end
+    fprintf('allow flipshape\n');
+    xin.flipshape = true;
+    y10 = xin.getitem('a10')
+    xmat.XBlock().make(y10).print()
+
+    y11 = xin.getitem('a11')
+    xmat.XBlock().make(y11).print()
   end
+
+
+  function sample_5()
+    fprintf('sample_5: xmat.MapStreamOut/In.file(): \n');
+    filename_out = fullfile(folder_data, 'sample_5.xmat');
+
+    X = reshape(1:6, 3, 2);
+    Xi = X + 1i;
+    disp(X)
+    disp(Xi)
+
+    xout = xmat.MapStreamOut.file(filename_out, xmat.Endian.big);
+    xout.setitem('a00', X);
+    xout.setitem('a01', Xi);
+    xout.morder = 'C';
+    xout.setitem('a10', X);
+    xout.flipshape = true;
+    xout.setitem('a11', X);
+    xout.close();
+    %! xout.ods.print(8)
+
+    xin = xmat.MapStreamIn.file(filename_out);
+    fprintf('xin.endian: %s\n', xin.endian);
+    xin.print()
+    return
+    y00 = xin.getitem('a00')
+    xmat.XBlock().make(y00).print()
+
+    y01 = xin.getitem('a01')
+    xmat.XBlock().make(y01).print()
+
+    fprintf('non-flipshape\n');
+    y10 = xin.getitem('a10')
+    xmat.XBlock().make(y10).print()
+
+    y11 = xin.getitem('a11')
+    xmat.XBlock().make(y11).print()
+    
+    fprintf('allow flipshape\n');
+    xin.flipshape = true;
+    y10 = xin.getitem('a10')
+    xmat.XBlock().make(y10).print()
+
+    y11 = xin.getitem('a11')
+    xmat.XBlock().make(y11).print()
+  end
+
+% end samples
+% -----------
 end
+
+
+

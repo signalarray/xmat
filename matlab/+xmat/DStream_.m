@@ -1,4 +1,4 @@
-classdef DStream_ < handle
+classdef (Abstract) DStream_ < handle
   
   properties
     mode

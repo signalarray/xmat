@@ -58,8 +58,8 @@ classdef DStreamFile < xmat.DStream_
       if isstring(A) || ischar(A)
         count = fwrite(obj.fid, A, 'char*1', 0, obj.endian);
       else
-        data = typecast(A, 'uint8');
-        count = fwrite(obj.fid, data, 'uint8', 0, obj.endian);
+        typeinfo = xmat.DataType.by_value(A);
+        count = fwrite(obj.fid, A, typeinfo.typename, 0, obj.endian);
       end
     end
 
