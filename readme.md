@@ -77,7 +77,7 @@ id    sizeof  label   name
 ------------------------
 # 00-15
 0x00  1       c       char
-0x01  1       ?       bool
+0x01  1       ?       bool  (specific implementation required)
 
 # 16-31: i (*)
 0x10  1       i0      int8

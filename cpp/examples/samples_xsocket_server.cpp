@@ -3,6 +3,7 @@
 
 #include "../include/xmat/xsocket.hpp"
 #include "../include/xmat/xserial.hpp"
+#include "../include/xmat/xprint.hpp"
 #include "common.hpp"
 
 
@@ -124,7 +125,7 @@ int sample_4() {
   printv(socket.remoteaddress());
 
   print(1, "receive in BugIn", 0, '-');
-  xmat::BugIn xin;
+  xmat::IMapStream<> xin;
   socket.recv(xin, 0.0);
   
   printv(xin);

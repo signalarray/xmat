@@ -198,6 +198,7 @@ int sample_3() {
   xin_ibb.push_all();
   xmat::IMapStreamMS<xmat::Endian::native> xin{std::move(xin_ibb)};
   printv(xin.head().total());
+  printv(xin);
 
   // ----
   print(1, "xin. scalar", 0, '-');

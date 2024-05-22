@@ -228,7 +228,7 @@ int sample_5() {
   using xmat::sl;
   using xmat::sl_;
   auto vv2 = v3d0.view({sl::ilen(0, 1), sl::all, sl::all});
-  auto vv2_ = v3d0.view(sl_::ilen(0, 1), sl_::all(), sl_::all());
+  // auto vv2_ = v3d0.view(sl_::ilen(0, 1), sl_::all(), sl_::all());
   printv(vv2.shape());
   printv(vv2.stride());
 

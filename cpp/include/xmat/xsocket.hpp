@@ -710,8 +710,12 @@ class TCPSocket : public Socket {
 
   // xmat::BugIn, xmat::BugOut send - recv
   // -------------------------------------
-  template<typename MemSourceT>
-  void send(const BugOut_<OBBuf_<MemSourceT>>& xout, double timeout) {
+  /// \tparam MemSourceT one of: 
+  ///         bbuf_memsource_default, AllocatorMSGlobal<char>, AllocatorMSRef<char>
+  template<typename MemSourceT, Endian endian_tag>
+  void send(const OMapStream_<ODStream_<OBBuf_<MemSourceT>, endian_tag>>& xout, 
+            double timeout) 
+  {
     if(xout.buf().is_open()) {
       return handle_error(xsstate::fail,
         "TCPSocket::send(BugOut_ xout). xout.buf().is_open() := false. xout must be closed");
@@ -724,8 +728,10 @@ class TCPSocket : public Socket {
   }
 
 
-  template<typename MemSourceT>
-  void recv(BugIn_<IBBuf_<MemSourceT>>& xin, double timeout) {
+  template<typename MemSourceT, Endian endian_tag>
+  void recv(IMapStream_<IDStream_<IBBuf_<MemSourceT>, endian_tag>>& xin, 
+            double timeout)
+  {
     if(xin.buf().size() != 0) {
       return handle_error(xsstate::fail,
         "TCPSocket::recv(BugIn_ xin). xin.buf().size() :!= 0. xout must be empty");

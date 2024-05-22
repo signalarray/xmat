@@ -4,6 +4,7 @@
 
 #include "../include/xmat/xserial.hpp"
 #include "../include/xmat/xsocket.hpp"
+#include "../include/xmat/xprint.hpp"
 #include "common.hpp"
 
 
@@ -60,7 +61,7 @@ int sample_4() {
   print("TCPSocket - send, receive", 0, '-');
 
   print(1, "make BugOut", 0, '-');
-  xmat::BugOut xout{};
+  xmat::OMapStream<> xout{};
   xout.setitem("a0", 4);
   xout.setitem("a1", 3.14);
   xout.close();

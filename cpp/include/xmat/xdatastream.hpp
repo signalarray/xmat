@@ -510,7 +510,7 @@ inline constexpr size_t sizeof_data_stream_type(sf::xuint8_t id) noexcept {
 
   case DataStreamType<  complex<std::int8_t>    >::id:  return DataStreamType<complex<std::int8_t>>::size;
   case DataStreamType<  complex<std::int16_t>   >::id:  return DataStreamType<complex<std::int16_t>>::size;
-  case DataStreamType<  complex<std::int32_t>   >::id:  return DataStreamType<complex<std::int32_t>>::size  ;
+  case DataStreamType<  complex<std::int32_t>   >::id:  return DataStreamType<complex<std::int32_t>>::size;
   case DataStreamType<  complex<std::int64_t>   >::id:  return DataStreamType<complex<std::int64_t>>::size;
 
   case DataStreamType<  std::uint8_t            >::id:  return DataStreamType<std::uint8_t>::size;
@@ -577,12 +577,12 @@ struct XHead {
   }
 
  public:
-  char          sign_[sf::k_sign_size + 1] = "xmat";
-  std::uint16_t bom_        = sf::k_bom;
-  sf::xsize_t   total_size_ = 0;
-  sf::xuint8_t  i_          = sf::k_sizeof_xsize_t;
-  sf::xuint8_t  s_          = sf::k_max_ndim;  
-  sf::xuint8_t  b_          = sf::k_max_name;
+  char          sign_[sf::k_sign_size + 1] = "xmat";      // Sign
+  std::uint16_t bom_        = sf::k_bom;                  // BOM
+  sf::xsize_t   total_size_ = 0;                          // Total Size
+  sf::xuint8_t  i_          = sf::k_sizeof_xsize_t;       // I
+  sf::xuint8_t  s_          = sf::k_max_ndim;             // S
+  sf::xuint8_t  b_          = sf::k_max_name;             // B
 };
 
 
@@ -695,7 +695,7 @@ template<typename T, typename Enable = void> struct Serializer { };
 /// \tparam ODStreamT output data-stream like:
 ///   ODStream_<std::ofstream,                  endian>
 ///   ODStream_<OBBuf_<bbuf_memsource_default>, endian>
-//////////////////////
+////////////////////////////
 template<typename ODStreamT>
 class OMapStream_ {
  public:
@@ -828,7 +828,8 @@ class IMapStream_ {
 
     template<typename T, typename Allocator> T get(Allocator&& alloc) {
       get_precond();
-      return Serializer<T>::load_with_allocator(block_, *ids_, std::forward<Allocator>(alloc));
+      auto y = Serializer<T>::load_with_allocator(block_, *ids_, std::forward<Allocator>(alloc));
+      return y;
     }
 
     template<typename T> T& get_to(T& y) {
@@ -916,7 +917,6 @@ using IBBuf       = IBBuf_<bbuf_memsource_default>;   // default_constructable
 using IBBufGMS    = IBBuf_<AllocatorMSGlobal<char>>;  // default_constructable
 using IBBufMS     = IBBuf_<AllocatorMSRef<char>>;     // non_default_constructable
 
-
 template<Endian endian> using ODStreamFile  = ODStream_<std::ofstream,  endian>;
 template<Endian endian> using ODStream      = ODStream_<OBBuf,          endian>;
 template<Endian endian> using ODStreamGMS   = ODStream_<OBBufGMS,       endian>;
@@ -927,13 +927,13 @@ template<Endian endian> using IDStream      = IDStream_<IBBuf,          endian>;
 template<Endian endian> using IDStreamGMS   = IDStream_<IBBufGMS,       endian>;
 template<Endian endian> using IDStreamMS    = IDStream_<IBBufMS,        endian>;
 
-template<Endian endian> using OMapStreamFile  = OMapStream_<ODStreamFile<endian>>;
-template<Endian endian> using OMapStream      = OMapStream_<ODStream<endian>>;
-template<Endian endian> using OMapStreamGMS   = OMapStream_<ODStreamGMS<endian>>;
-template<Endian endian> using OMapStreamMS    = OMapStream_<ODStreamMS<endian>>;
+template<Endian endian = Endian::native> using OMapStreamFile  = OMapStream_<ODStreamFile<endian>>;
+template<Endian endian = Endian::native> using OMapStream      = OMapStream_<ODStream<endian>>;
+template<Endian endian = Endian::native> using OMapStreamGMS   = OMapStream_<ODStreamGMS<endian>>;
+template<Endian endian = Endian::native> using OMapStreamMS    = OMapStream_<ODStreamMS<endian>>;
 
-template<Endian endian> using IMapStreamFile  = IMapStream_<IDStreamFile<endian>>;
-template<Endian endian> using IMapStream      = IMapStream_<IDStream<endian>>;
-template<Endian endian> using IMapStreamGMS   = IMapStream_<IDStreamGMS<endian>>;
-template<Endian endian> using IMapStreamMS    = IMapStream_<IDStreamMS<endian>>;
+template<Endian endian = Endian::native> using IMapStreamFile  = IMapStream_<IDStreamFile<endian>>;
+template<Endian endian = Endian::native> using IMapStream      = IMapStream_<IDStream<endian>>;
+template<Endian endian = Endian::native> using IMapStreamGMS   = IMapStream_<IDStreamGMS<endian>>;
+template<Endian endian = Endian::native> using IMapStreamMS    = IMapStream_<IDStreamMS<endian>>;
 } // namespace xmat

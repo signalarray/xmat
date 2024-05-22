@@ -306,7 +306,6 @@ struct Serializer<NArray_<T, ND, MemSourceT, MOrderT, IntT>,
   template<typename IDStreamT>
   static void load_to(const XBlock& block, IDStreamT& ids, array_t& y) {
     Serializer<array_interface_t>::load_to(block, ids, y);
-    return y;
   }
 
   template<typename IDStreamT>

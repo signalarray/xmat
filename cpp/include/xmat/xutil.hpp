@@ -98,10 +98,15 @@ inline bool isle() {
 # error "Undefined byte order: XMAT_IS_BIG_ENDIAN macro"
 #endif
 enum class Endian {
-  little = 0,
-  big    = 1,
-  native = XMAT_IS_BIG_ENDIAN ? big : little,
+  little    = 0,
+  big       = 1,
+  native    = XMAT_IS_BIG_ENDIAN ? big : little,
+  notnative = XMAT_IS_BIG_ENDIAN ? little : big,
   changeble
 };
+
+inline Endian change_endian(Endian endian) { 
+  return endian == Endian::little ? Endian::big : Endian::little;
+}
 
 } // namespace xmat

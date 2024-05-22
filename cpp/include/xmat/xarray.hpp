@@ -32,32 +32,32 @@ enum class MOrder: char {
 
 namespace hidx { // help index functions namespace
 
-template<typename It0, typename It1, typename T2>
-T2 conv(It0 first0, It1 first1, size_t n, T2 inital) {
+template<typename Iter0, typename Iter1, typename T2>
+T2 conv(Iter0 first0, Iter1 first1, size_t n, T2 inital) {
   for (; n != 0; --n, ++first0, ++first1) { 
     inital += *first0 * *first1; 
   }
   return inital;
 }
 
-template<size_t N, typename T0, typename T1, typename T2>
-T2 conv(T0* first0, T1* first1, T2 inital) {
+template<size_t N, typename Iter0, typename Iter1, typename T2>
+T2 conv(Iter0 first0, Iter1 first1, T2 inital) {
   for (size_t n = 0; n < N; ++n, ++first0, ++first1) {
     inital += *first0 * *first1; 
   }
   return inital;
 }
 
-template<typename T0, typename T1, typename T2>
-T2 rconv(T0* first0, T1* first1, size_t n, T2 inital) {
+template<typename Iter0, typename Iter1, typename T2>
+T2 rconv(Iter0 first0, Iter1 first1, size_t n, T2 inital) {
   for (first0 += n-1; n != 0; --n, --first0, ++first1) {
     inital += *first0 * *first1; 
   }
   return inital;
 }
 
-template<size_t N, typename T0, typename T1, typename T2>
-T2 rconv(T0* first0, T1* first1, T2 inital) {
+template<size_t N, typename Iter0, typename Iter1, typename T2>
+T2 rconv(Iter0 first0, Iter1 first1, T2 inital) {
   first0 += N-1;
   for (size_t n = 0; n < N; ++n, --first0, ++first1) {
     inital += *first0 * *first1; 
@@ -205,18 +205,18 @@ auto increment(size_t idx, size_t ndim, RandomIt0 index, RandomIt1 shape, Random
 // unravel
 // -------
 // MOrder::C
-template<MOrder MOrderT, typename T0, typename T1,
+template<MOrder MOrderT, typename Iter0, typename Iter1,
          typename std::enable_if_t<MOrderT == MOrder::C, int> = 0>
-void unravel(size_t i, T0* stride, T1* out, size_t ndim) {
+void unravel(size_t i, Iter0 stride, Iter1 out, size_t ndim) {
   for (auto it = out, end = out + ndim; i && it != end; ++it, ++stride) {
     *it = i / *stride;
     i %= *stride;
   }
 }
 
-template<MOrder MOrderT, typename T0,
+template<MOrder MOrderT, typename Iter0,
          typename std::enable_if_t<MOrderT == MOrder::C, int> = 0>
-size_t unraveli(size_t i, T0* stride, size_t ndim) {
+size_t unraveli(size_t i, Iter0 stride, size_t ndim) {
   size_t i2 = 0;
   for (auto end = stride + ndim; i && stride != end; ++stride) {
     auto stride_ = *stride;
@@ -227,9 +227,9 @@ size_t unraveli(size_t i, T0* stride, size_t ndim) {
 }
 
 // MOrder::F
-template<MOrder MOrderT, typename T0, typename T1,
+template<MOrder MOrderT, typename Iter0, typename Iter1,
          typename std::enable_if_t<MOrderT == MOrder::F, int> = 0>
-void unravel(size_t i, T0* stride, T1* out, size_t ndim) {
+void unravel(size_t i, Iter0 stride, Iter1 out, size_t ndim) {
   stride += ndim - 1;
   for (auto it = out + ndim - 1, end = out-1; i && it != end; --it, --stride) {
     *it = i / *stride;
@@ -238,9 +238,9 @@ void unravel(size_t i, T0* stride, T1* out, size_t ndim) {
 }
 
 // MOrder::C
-template<MOrder MOrderT, typename T0,
+template<MOrder MOrderT, typename Iter0,
          typename std::enable_if_t<MOrderT == MOrder::F, int> = 0>
-size_t unraveli(size_t i, T0* stride, size_t ndim) {
+size_t unraveli(size_t i, Iter0 stride, size_t ndim) {
   size_t i2 = 0;
   stride += ndim - 1;
   for (auto end = stride - ndim ; i && stride != end; --stride) {
@@ -252,9 +252,9 @@ size_t unraveli(size_t i, T0* stride, size_t ndim) {
 }
 
 // MOrder::C
-template<MOrder MOrderT, typename T0, typename T1,
+template<MOrder MOrderT, typename Iter0, typename Iter1,
          typename std::enable_if_t<MOrderT == MOrder::C, int> = 0>
-size_t ndcontigous(const T0* shape, const T1* stride, size_t ndim) {
+size_t ndcontigous(Iter0 shape, Iter1 stride, size_t ndim) {
   auto shape_it = shape + ndim - 1;
   stride += ndim - 1;
   auto expect = *stride;
@@ -267,9 +267,9 @@ size_t ndcontigous(const T0* shape, const T1* stride, size_t ndim) {
 }
 
 // MOrder::F
-template<MOrder MOrderT, typename T0, typename T1,
+template<MOrder MOrderT, typename Iter0, typename Iter1,
          typename std::enable_if_t<MOrderT == MOrder::F, int> = 0>
-size_t ndcontigous(const T0* shape, const T1* stride, size_t ndim) {
+size_t ndcontigous(Iter0 shape, Iter1 stride, size_t ndim) {
   auto shape_it = shape;
   auto expect = *stride;
   for (shape += ndim;
@@ -281,8 +281,8 @@ size_t ndcontigous(const T0* shape, const T1* stride, size_t ndim) {
 }
 
 
-template<typename T>
-bool isunique(const T* begin, const T* end) {
+template<typename Iter>
+bool isunique(const Iter begin, const Iter end) {
   auto it = begin;
   for (auto end_ = end - 1; it != end_; ++it) {
     for (auto it2 = it + 1; it2 != end; ++it2) { 
@@ -295,14 +295,13 @@ bool isunique(const T* begin, const T* end) {
 }
 
 // due to be shure in not using heap memory
-template<typename T, typename Compare = std::less<T>>
-void booblesort(T* begin, T* end, Compare comp = Compare{}) {
+template<typename Iter>
+void booblesort(Iter begin, Iter end) {
   using std::swap;
   auto end_ = end - 1;
   for (auto it = begin; it != end_; ++it) {
     for (auto it2 = it + 1; it2 != end; ++it2) {
-      if (comp(*it2, *it)) {
-        // auto tmp = *it; *it = *it2; *it2 = tmp;
+      if (*it2 < *it) {
         swap(*it, *it2); 
       }
     }
@@ -310,13 +309,13 @@ void booblesort(T* begin, T* end, Compare comp = Compare{}) {
 }
 
 // std::set_difference is just since C++17
-template<typename T0, typename T1, typename T2>
-T2* setdiff(const T0* a_begin, const T0* a_end,
-             const T1* b_begin, const T1* b_end,
-             T2* out_begin, T2* out_end = nullptr)
+template<typename Iter0, typename Iter1, typename Iter2>
+Iter2 setdiff(const Iter0 a_begin, const Iter0 a_end,
+             const Iter1 b_begin, const Iter1 b_end,
+             Iter2 out_begin)
 {
   size_t num = 0;
-  for (auto a_it = a_begin; a_it != a_end && out_begin != out_end; ++a_it) {
+  for (auto a_it = a_begin; a_it != a_end /*&& out_begin != out_end*/; ++a_it) {
     bool contains = false;
     for (auto b_it = b_begin; b_it != b_end; ++b_it) {
       if (*a_it == *b_it) {
@@ -325,7 +324,7 @@ T2* setdiff(const T0* a_begin, const T0* a_end,
       }
     }
     if (!contains) {
-      assert(out_begin != out_end && "exceeds bounds");
+      // assert(out_begin != out_end && "exceeds bounds");
       *(out_begin++) = *a_it; 
     }
   }
@@ -805,6 +804,9 @@ struct WIterator_ {
 
 template<typename ViewT> struct ViewForNarray {};
 
+template<typename T, size_t ND, MOrder MOrderT, typename IntT> struct View_;
+template<typename T, size_t ND, MOrder MOrderT, typename IntT> struct VIterator_;
+
 template<class Derived, 
          typename T, size_t ND, MOrder MOrderT, typename IntT = size_t>
 struct NArrayInterface_ {
@@ -845,11 +847,12 @@ struct NArrayInterface_ {
   std::enable_if_t<AllNType<ND, IntT, Args...>::value, const T&>
   /*const T&*/ at(Args ... args) const noexcept { assert(ptr()); return ptr()[ravel().at(args...)]; }
 
-  // iterators
+  // flat-iterator
   fiterator_t fbegin() noexcept { return {ptr(), {ravel().shape, ravel().stride}}; }
 
   fiterator_t fend() noexcept { return {{ravel().shape, ravel().stride}, true}; }
 
+  // walk-iterator
   witerator_t wbegin() noexcept { return {ptr(), {ravel().shape, ravel().stride}}; }
 
   witerator_t wend() noexcept { return {{ravel().shape, ravel().stride}, true}; }
@@ -858,65 +861,43 @@ struct NArrayInterface_ {
 
   cwiterator_t wend() const noexcept { return {{ravel().shape, ravel().stride}, true}; }
 
+
+  // iter, view, keep, drop
+  // ----------------------
   // 1D-begin
   template<size_t ND_ = ND, typename std::enable_if_t<(ND_ == 1), int> = 0>
   NIterator_<T, 1> begin() noexcept { return {ptr(), ravel().stride[0]}; }
 
   // 1D-end
   template<size_t ND_ = ND, typename std::enable_if_t<(ND_ == 1), int> = 0>
-  NIterator_<T, 1> end() noexcept { 
+  NIterator_<T, 1> end() noexcept {
     return {ptr() + ravel().shape[0] * ravel().stride[0], ravel().stride[0]}; 
   }
   
-#if !defined _WIN32 || defined __MINGW32__
   // ND-begin
   template<size_t ND_ = ND, typename std::enable_if_t<(ND_ > 1), int> = 0>
-  typename ViewForNarray<Derived>::viterator_t<ND-1, IntT>
-  begin() noexcept { return {ptr(), ravel().template drop<1>({0})}; }
-  
+  VIterator_<T, ND-1, MOrderT, IntT> begin() noexcept;
+
+
   // ND-end
   template<size_t ND_ = ND, typename std::enable_if_t<(ND_ > 1), int> = 0>
-  typename ViewForNarray<Derived>::viterator_t<ND-1, IntT>
-  end() noexcept { return begin().next(ravel().shape[hidx::morderhidhi(MOrderT, ndim)]); }
+  VIterator_<T, ND-1, MOrderT, IntT> end() noexcept;
 
-  // slice, view, keep, drop
-  // -----------------------
+
   template<size_t ND_ = ND, typename IntT_ = IntT, typename std::enable_if_t<(ND_ >= ND), int> = 0>
-  typename ViewForNarray<Derived>::view_t<ND_, IntT_> 
-  view(const NSlice<ND_>& nslice) noexcept {
-    auto rvsl = ravel().template view<ND_, MOrderT, IntT>(nslice);
-    return {ptr() + rvsl.first, rvsl.second};
-  }
+  View_<T, ND_, MOrderT, IntT_> view(const NSlice<ND_>& nslice) noexcept;
 
-  template<typename ... Args>
-  std::enable_if_t<AllNType<ND, Slice, Args...>::value, 
-  typename ViewForNarray<Derived>::view_t<sizeof...(Args), IntT>>
-  view(Args...args) noexcept {
-    NSlice<sizeof...(Args)> nslice{args...};
-    auto rvsl = ravel().template view<sizeof...(Args), MOrderT, IntT>(nslice);
-    return {ptr() + rvsl.first, rvsl.second};
-  }
 
-  template<typename ... Args>
-  std::enable_if_t<AllNType<ND, Slice, Args...>::value>
-  view_(Args...args) noexcept {
-    Slice x[] = {args ...};
-  }
+  template<size_t Nkeep, typename std::enable_if_t<(Nkeep < ND), int> = 0>
+  View_<T, Nkeep, MOrderT, IntT> keep(const std::array<size_t, Nkeep>& dims) noexcept;
 
-  template<size_t Nkeep, typename std::enable_if_t<Nkeep < ND, int> = 0>
-  typename ViewForNarray<Derived>::view_t<Nkeep, IntT> 
-  keep(const std::array<size_t, Nkeep>& dims) noexcept {
-    return {ptr(), ravel().template keep(dims)};
-  }
 
-  template<size_t Ndrop, typename std::enable_if_t<Ndrop < ND, int> = 0>
-  typename ViewForNarray<Derived>::view_t<ND - Ndrop, IntT> 
-  drop(const std::array<size_t, Ndrop>& dims) noexcept {
-    return {ptr(), ravel().template drop(dims)};
-  }
-#endif
+  template<size_t Ndrop, typename std::enable_if_t<(Ndrop < ND), int> = 0>
+  View_<T, ND-Ndrop, MOrderT, IntT> drop(const std::array<size_t, Ndrop>& dims) noexcept;
 
-  // operations
+
+  // fill
+  // ------------------------
   void enumerate() noexcept {
     T x{0};
     for (auto it = fbegin(), end = fend(); it != end; ++it, ++x) {
@@ -1020,6 +1001,51 @@ struct ViewForNarray<View_<T, ND, MOrderT, IntT>> {
   template<size_t ND_, typename IntT_> 
   using viterator_t = VIterator_<T, ND_, MOrderT, IntT_>;
 };
+
+
+// ------------------------------------------------------------
+// NArrayInterface_: methods definitions
+// ------------------------------------------------------------
+// begin()
+template<class Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
+template<size_t ND_, typename std::enable_if_t<(ND_ > 1), int>>
+VIterator_<T, ND-1, MOrderT, IntT>
+NArrayInterface_<Derived, T, ND, MOrderT, IntT>::begin() noexcept {
+  return {ptr(), ravel().template drop<1>({0})};
+}
+
+// end()
+template<class Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
+template<size_t ND_, typename std::enable_if_t<(ND_ > 1), int>>
+VIterator_<T, ND-1, MOrderT, IntT>
+NArrayInterface_<Derived, T, ND, MOrderT, IntT>::end() noexcept {
+  return begin().next(ravel().shape[hidx::morderhidhi(MOrderT, ndim)]);
+}
+
+// view
+template<class Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
+template<size_t ND_, typename IntT_, typename std::enable_if_t<(ND_ >= ND), int>>
+View_<T, ND_, MOrderT, IntT_> 
+NArrayInterface_<Derived, T, ND, MOrderT, IntT>::view(const NSlice<ND_>& nslice) noexcept {
+  auto rvsl = ravel().template view<ND_, MOrderT, IntT>(nslice);
+  return {ptr() + rvsl.first, rvsl.second};
+}
+
+// keep 
+template<class Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
+template<size_t Nkeep, typename std::enable_if_t<(Nkeep < ND), int>>
+View_<T, Nkeep, MOrderT, IntT> 
+NArrayInterface_<Derived, T, ND, MOrderT, IntT>::keep(const std::array<size_t, Nkeep>& dims) noexcept {
+  return {ptr(), ravel().template keep<Nkeep>(dims)};
+}
+
+// drop
+template<class Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
+template<size_t Ndrop, typename std::enable_if_t<(Ndrop < ND), int>>
+View_<T, ND-Ndrop, MOrderT, IntT>
+NArrayInterface_<Derived, T, ND, MOrderT, IntT>::drop(const std::array<size_t, Ndrop>& dims) noexcept {
+  return {ptr(), ravel().template drop<Ndrop>(dims)};
+}
 
 
 // ------------------------------------------------------------
@@ -1135,8 +1161,9 @@ struct NArray_ : public NArrayInterface_<NArray_<T, ND, MemSourceT, MOrderT, Int
   
   friend void swap(NArray_& lhs, NArray_& rhs) noexcept {
     using std::swap;
-    swap(lhs.ravel_, rhs.ravel_);
     swap(lhs.storage_, rhs.storage_);
+    swap(lhs.ptr_, rhs.ptr_);
+    swap(lhs.ravel_, rhs.ravel_);
   }
 
  public:
