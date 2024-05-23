@@ -45,14 +45,18 @@ bool check_shape_1d(const XBlock& block) {
                         block.ndim(), block.shape().size());
 }
 
+
+///////////////////////////////////////////////////////////////
+namespace serial {
+
 // scalar
-/////////////////////
-template <typename T>
-struct Serializer<T, std::enable_if_t<DataStreamType<T>::id>> {
+////////////////////
+template<typename T>
+struct Dump<T, std::enable_if_t<DataStreamType<T>::enabled>> {
   static const bool enabled = true;
 
   template<typename ODStreamT>
-  static void dump(XBlock& block, ODStreamT& ods, const T& x) {
+  static void dump(XBlock& block, ODStreamT& ods, const T& x) { 
     block.o_ = 'C';
     block.t_ = DataStreamType<T>::id;
     block.s_ = 0;
@@ -61,9 +65,14 @@ struct Serializer<T, std::enable_if_t<DataStreamType<T>::id>> {
     block.dump(ods);
     ods.write(x);
   }
+};
+
+template<typename T>
+struct LoadTo<T, std::enable_if_t<DataStreamType<T>::enabled>> {
+  static const bool enabled = true;
 
   template<typename IDStreamT>
-  static void load_to(const XBlock& block, IDStreamT& ids, T& y) {
+  static void load(const XBlock& block, IDStreamT& ids, T& y) {
     if(block.t_ != DataStreamType<T>::id) {
       throw DeserializationError("Scalar load(): wrong scalar type");
     }
@@ -76,24 +85,29 @@ struct Serializer<T, std::enable_if_t<DataStreamType<T>::id>> {
     }
     ids.read(y);
   }
+};
+
+template<typename T>
+struct Load<T, std::enable_if_t<DataStreamType<T>::enabled>> { 
+  static const bool enabled = true;
 
   template<typename IDStreamT>
-  static T load(const XBlock& block, IDStreamT& ibuf) {
+  static T load(const XBlock& block, IDStreamT& ids) {
     T y;
-    load_to(block, ibuf, y);
-    return y;
+    LoadTo<T>::load(block, ids, y);
+    return y; 
   }
 };
 
 
 // pointer
-/////////////////////
-template <typename T>
-struct Serializer<T*, std::enable_if_t<DataStreamType<T>::id>> {
+///////////////////////////////
+template<typename T>
+struct DumpPtr<T, std::enable_if_t<DataStreamType<T>::enabled>> {
   static const bool enabled = true;
 
   template<typename ODStreamT>
-  static void dump_n(XBlock& block, ODStreamT& ods, const T* xptr, size_t n) {
+  static void dump(XBlock& block, ODStreamT& ods, const T* xptr, size_t n) { 
     block.o_ = 'C';
     block.t_ = DataStreamType<T>::id;
     block.s_ = 1;
@@ -102,10 +116,14 @@ struct Serializer<T*, std::enable_if_t<DataStreamType<T>::id>> {
     block.dump(ods);
     ods.write(xptr, n);
   }
+};
 
-  // not save
+template<typename T>
+struct LoadPtr<T, std::enable_if_t<DataStreamType<T>::enabled>> {
+  static const bool enabled = true;
+
   template<typename IDStreamT>
-  static void load_to(const XBlock& block, IDStreamT& ids, T* yptr) {
+  static void load(const XBlock& block, IDStreamT& ids, T* yptr) { 
     if(block.t_ != DataStreamType<T>::id) {
       throw DeserializationError("Scalar load(): wrong scalar type");
     }
@@ -126,38 +144,48 @@ namespace impl_std {
   template<typename U, typename ODStreamT>
   void dump(XBlock& block, ODStreamT& ods, const U& x) {
     using T = typename U::value_type;
-    return Serializer<T*>::dump_n(block, ods, &x[0], x.size());
+    return serial::DumpPtr<T>::dump(block, ods, &x[0], x.size());
   }
 
   template<typename U, typename IDStream>
   void load_to_resizable(const XBlock& block, IDStream& ids, U& y) {
     using T = typename U::value_type;
     y.resize(block.numel());
-    Serializer<T*>::load_to(block, ids, &y[0]);
+    serial::LoadPtr<T>::load(block, ids, &y[0]);
   }
 } // namespase impl_std
 
 
-// vector
-////////////////////////////////
+
+// std::vector
+///////////////////////////////
 template<typename T, typename A>
-struct Serializer<std::vector<T, A>, std::enable_if_t<DataStreamType<T>::id>> {
+struct Dump<std::vector<T, A>, std::enable_if_t<DataStreamType<T>::enabled>> {
   static const bool enabled = true;
-  using U = std::vector<T, A>;
 
   template<typename ODStreamT>
-  static void dump(XBlock& block, ODStreamT& ods, const U& x) { 
-    return impl_std::dump(block, ods, x); 
+  static void dump(XBlock& block, ODStreamT& ods, const std::vector<T, A>& x) { 
+    return impl_std::dump(block, ods, x);
   }
+};
+
+template<typename T, typename A>
+struct LoadTo<std::vector<T, A>, std::enable_if_t<DataStreamType<T>::enabled>> {
+  static const bool enabled = true;
 
   template<typename IDStreamT>
-  static void load_to(const XBlock& block, IDStreamT& ids, U& y) {
+  static void load(const XBlock& block, IDStreamT& ids, std::vector<T, A>& y) {
     impl_std::load_to_resizable(block, ids, y);
   }
+};
+
+template<typename T, typename A>
+struct Load<std::vector<T, A>, std::enable_if_t<DataStreamType<T>::enabled>> {
+  static const bool enabled = true;
 
   template<typename IDStreamT>
-  static U load(const XBlock& block, IDStreamT& ids) {
-    U y; 
+  static std::vector<T, A> load(const XBlock& block, IDStreamT& ids) {
+    std::vector<T, A> y;
     impl_std::load_to_resizable(block, ids, y); 
     return y;
   }
@@ -165,77 +193,91 @@ struct Serializer<std::vector<T, A>, std::enable_if_t<DataStreamType<T>::id>> {
 
 
 // std::string
-//////////////////////////////
+///////////////////////////////
 template<>
-struct Serializer<std::string, void> {
+struct Dump<std::string, void> {
   static const bool enabled = true;
-  using U = std::string;
 
-  template<typename ODStream>
-  static void dump(XBlock& block, ODStream& ods, const U& x) {
+  template<typename ODStreamT>
+  static void dump(XBlock& block, ODStreamT& ods, const std::string& x) {
     return impl_std::dump(block, ods, x);
   }
+};
 
-  template<typename IDStream>
-  static void load_to(const XBlock& block, IDStream& ids, U& y) {
+template<>
+struct LoadTo<std::string, void> {
+  static const bool enabled = true;
+
+  template<typename IDStreamT>
+  static void load(const XBlock& block, IDStreamT& ids, std::string& y) {
     impl_std::load_to_resizable(block, ids, y);
   }
+};
 
-  template<typename IDStream>
-  static U load(const XBlock& block, IDStream& ids) {
-    U y; 
+template<>
+struct Load<std::string, void> {
+  static const bool enabled = true;
+
+  template<typename IDStreamT>
+  static std::string load(const XBlock& block, IDStreamT& ids) {
+    std::string y;
     impl_std::load_to_resizable(block, ids, y); 
     return y;
   }
 };
 
+
 // std::array
-//////////////////////////////
+///////////////////////////////
 template<typename T, size_t N>
-struct Serializer<std::array<T, N>, std::enable_if_t<DataStreamType<T>::id>> {
+struct Dump<std::array<T, N>, std::enable_if_t<DataStreamType<T>::enabled>> {
   static const bool enabled = true;
-  using U = std::array<T, N>;
 
   template<typename ODStreamT>
-  static void dump(XBlock& block, ODStreamT& ods, const U& x) { 
-    return impl_std::dump(block, ods, x); 
+  static void dump(XBlock& block, ODStreamT& ods, const std::array<T, N>& x) {
+    return impl_std::dump(block, ods, x);
   }
+};
+
+template<typename T, size_t N>
+struct LoadTo<std::array<T, N>, std::enable_if_t<DataStreamType<T>::enabled>> {
+  static const bool enabled = true;
 
   template<typename IDStreamT>
-  static U& load_to(const XBlock& block, IDStreamT& ids, U& y) {
-    if(block.t_ != DataStreamType<T>::id) {
-      throw DeserializationError("std::container load(): wrong scalar type");
-    }
-    if(!check_shape_1d(block)) {
-      throw DeserializationError("wrong shape for std::container");
-    }
+  static void load(const XBlock& block, IDStreamT& ids, std::array<T, N>& y) {
     if(block.numel() != y.size()) {
       throw DeserializationError("wrong size for std::array<T,N>");
     }
-    Serializer<T*>::load_to(block, ids, y.data());
-    return y;
+    serial::LoadPtr<T>::load(block, ids, y.data());
   }
+};
+
+template<typename T, size_t N>
+struct Load<std::array<T, N>, std::enable_if_t<DataStreamType<T>::enabled>> {
+  static const bool enabled = true;
 
   template<typename IDStreamT>
-  static U load(const XBlock& block, IDStreamT& ids) {
-    U y;
-    load_to(block, ids, y);
+  static std::array<T, N> load(const XBlock& block, IDStreamT& ids) {
+    std::array<T, N> y;
+    LoadTo<std::array<T, N>>::load(block, ids, y);
     return y;
   }
 };
 
 
 // xmat::NArrayInterface_
-// ----------------------
+////////////////////////////
 template<typename Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
-struct Serializer<NArrayInterface_<Derived, T, ND, MOrderT, IntT>, 
-                  std::enable_if_t<DataStreamType<T>::id>>
-  {
+struct Dump<NArrayInterface_<Derived, T, ND, MOrderT, IntT>, 
+            std::enable_if_t<DataStreamType<T>::enabled>>
+{
   static const bool enabled = true;
-  using array_t = NArrayInterface_<Derived, T, ND, MOrderT, IntT>;
-  
+
   template<typename ODStreamT>
-  static void dump(XBlock& block, ODStreamT& ods, const array_t& x) {
+  static void dump(XBlock& block, 
+                   ODStreamT& ods, 
+                  const NArrayInterface_<Derived, T, ND, MOrderT, IntT>& x) 
+  {
     block.o_ = 'C';
     block.t_ = DataStreamType<T>::id;
     block.s_ = x.ndim;
@@ -259,9 +301,19 @@ struct Serializer<NArrayInterface_<Derived, T, ND, MOrderT, IntT>,
       }
     }
   }
+};
+
+template<typename Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
+struct LoadTo<NArrayInterface_<Derived, T, ND, MOrderT, IntT>, 
+              std::enable_if_t<DataStreamType<T>::enabled>>
+{
+  static const bool enabled = true;
 
   template<typename IDStreamT>
-  static void load_to(const XBlock& block, IDStreamT& ids, array_t& y) {
+  static void load(XBlock& block, 
+                   IDStreamT& ids, 
+                  NArrayInterface_<Derived, T, ND, MOrderT, IntT>& y) 
+  {
     if(block.t_ != DataStreamType<T>::id) {
       throw DeserializationError("std::container load(): wrong scalar type");
     }
@@ -275,8 +327,8 @@ struct Serializer<NArrayInterface_<Derived, T, ND, MOrderT, IntT>,
     }
 
     // read
-    const bool iscontig1 = y.ravel().leaststride() == 1;
-    if (iscontig1) {
+    const bool iscontig = y.ravel().leaststride() == 1;
+    if (iscontig) {
       for (auto it = y.wbegin(), end = y.wend(); it != end; ++it) {
         ids.read(it.data(), it.length());
       }
@@ -289,41 +341,66 @@ struct Serializer<NArrayInterface_<Derived, T, ND, MOrderT, IntT>,
   }
 };
 
-// NArray_
+
+// xmat::NArray
+////////////////////////////
 template<typename T, size_t ND, class MemSourceT, MOrder MOrderT, typename IntT>
-struct Serializer<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
-                          std::enable_if_t<DataStreamType<T>::id>>
-  {
+struct Dump<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
+            std::enable_if_t<DataStreamType<T>::enabled>>
+{
   static const bool enabled = true;
   using array_t = NArray_<T, ND, MemSourceT, MOrderT, IntT>;
-  using array_interface_t = typename array_t::base_t;
-  
+
   template<typename ODStreamT>
   static void dump(XBlock& block, ODStreamT& ods, const array_t& x) {
-    return Serializer<array_interface_t>::dump(block, ods, x);
+    Dump<typename array_t::base_t>::dump(block, ods, x);
   }
+};
+
+template<typename T, size_t ND, class MemSourceT, MOrder MOrderT, typename IntT>
+struct LoadTo<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
+            std::enable_if_t<DataStreamType<T>::enabled>>
+{
+  static const bool enabled = true;
+  using array_t = NArray_<T, ND, MemSourceT, MOrderT, IntT>;
 
   template<typename IDStreamT>
-  static void load_to(const XBlock& block, IDStreamT& ids, array_t& y) {
-    Serializer<array_interface_t>::load_to(block, ids, y);
+  static void load(XBlock& block, IDStreamT& ids, array_t& y) {
+    Load<typename array_t::base_t>::load(block, ids, y);
   }
+};
 
-  template<typename IDStreamT>
-  static array_t load_with_allocator(const XBlock& block, IDStreamT& ids, const MemSourceT& memsrc) {
+template<typename T, size_t ND, class MemSourceT, MOrder MOrderT, typename IntT>
+struct LoadArgs<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
+                std::enable_if_t<DataStreamType<T>::enabled>>
+{
+  static const bool enabled = true;
+  using array_t = NArray_<T, ND, MemSourceT, MOrderT, IntT>;
+
+  template<typename IDStreamT, typename ... Args>
+  static array_t load(XBlock& block,  IDStreamT& ids, Args&&... args) {
     typename array_t::index_t shape;
     shape.fill(1);
     std::copy_n(block.shape_.cbegin() + (ND - block.ndim()), block.ndim(), shape.begin());
 
-    array_t y{shape, MemSourceT{memsrc}};
-    Serializer<array_interface_t>::load_to(block, ids, y);
+    array_t y{shape, MemSourceT{std::forward<Args>(args)...}};
+    LoadTo<typename array_t::base_t>::load(block, ids, y);
     return y;
   }
+};
 
-  template<typename IDStreamT, 
-           bool HDC = array_t::k_has_default_constructor, 
-           std::enable_if_t<HDC, bool> = false>
-  static array_t load(const XBlock& block, IDStreamT& ids) {
-    return load_with_allocator(block, ids, MemSourceT{});
+template<typename T, size_t ND, class MemSourceT, MOrder MOrderT, typename IntT>
+struct LoadTo<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
+            std::enable_if_t<DataStreamType<T>::enabled 
+            && NArray_<T, ND, MemSourceT, MOrderT, IntT>::k_has_default_constructor>>
+{
+  static const bool enabled = true;
+  using array_t = NArray_<T, ND, MemSourceT, MOrderT, IntT>;
+
+  template<typename IDStreamT>
+  static array_t load(XBlock& block, IDStreamT& ids) {
+    LoadArgs<typename array_t::base_t>::load(block, ids, MemSourceT{});
   }
 };
+} // namespase serial
 } // namespace xmat

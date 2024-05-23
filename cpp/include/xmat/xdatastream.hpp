@@ -253,8 +253,6 @@ class OBBuf_ {
   
   storage_t& storage() { return storage_; }
 
-  Endian endian() const noexcept { return endian_tag; }
-
  public:
   storage_t storage_;
   std::size_t size_ = 0;
@@ -449,12 +447,14 @@ const xuint8_t k_max_name = 32;
 // -------------------------
 template<typename T>
 struct DataStreamType {
+  static const bool enabled = false;
   static constexpr const char* const label = "undef";
 };
 
 
 #define XMAT_REGTYPE(Id, Size, Label, Type)                           \
 template<> struct DataStreamType<Type> {                              \
+  static const bool enabled = true;                                   \
   static_assert(sizeof(Type) == Size, "sizeof(" #Type ") !=" #Size);  \
   static const sf::xuint8_t id = Id;                                  \
   static const size_t size = Size;                              \
@@ -691,6 +691,59 @@ struct XBlock {
 //////////////////////////////////////////////////////////////////
 template<typename T, typename Enable = void> struct Serializer { };
 
+namespace serial {
+template<typename T, typename Enable = void>
+struct Dump { 
+  static const bool enabled = false;
+
+  template<typename ODStreamT>
+  static void dump(XBlock&, ODStreamT&, const T&) { }
+};
+
+template<typename T, typename Enable = void>
+struct LoadTo { 
+  static const bool enabled = false;
+
+  template<typename IDStreamT>
+  static void load(const XBlock&, IDStreamT&, T&) { }
+};
+
+template<typename T, typename Enable = void>
+struct Load { 
+  static const bool enabled = false;
+
+  template<typename IDStreamT>
+  static T load(const XBlock&, IDStreamT&) { return T{}; }
+};
+
+template<typename T, typename Enable = void>
+struct DumpPtr {
+  static const bool enabled = false;
+
+  template<typename ODStreamT>
+  static void dump(XBlock&, ODStreamT&, const T*, size_t) { }
+};
+
+template<typename T, typename Enable = void>
+struct LoadPtr {
+  static const bool enabled = false;
+
+  template<typename IDStreamT>
+  static void load(const XBlock&, IDStreamT&, T*) { }
+};
+
+template<typename T, typename Enable = void>
+struct LoadArgs { 
+  static const bool enabled = false;
+
+  template<typename IDStreamT, typename ... Args>
+  static T load(const XBlock&, IDStreamT&, Args&&... args) {
+    // T{std::forward<Args>(args)...};
+    return T{};
+  }
+};
+} // namespace serial
+
 
 /// \tparam ODStreamT output data-stream like:
 ///   ODStream_<std::ofstream,                  endian>
@@ -725,12 +778,12 @@ class OMapStream_ {
     ods_.close();
   }  
 
-  template<typename T, bool Enabled = Serializer<T>::enabled>
+  template<typename T, typename std::enable_if_t<serial::Dump<T>::enabled, int> = 0>
   XBlock setitem(VString name, const T& x) {
     XBlock block;
     assign(block.name_, name.ptr);
     block.b_ = std::strlen(name.ptr);
-    Serializer<T>::dump(block, ods_, x);
+    serial::Dump<T>::dump(block, ods_, x);
     return block;
   }
 
@@ -740,7 +793,7 @@ class OMapStream_ {
     XBlock block;
     assign(block.name_, name.ptr);
     block.b_ = std::strlen(name.ptr);
-    Serializer<T*>::dump_n(block, ods_, x, n);
+    serial::DumpPtr<T>::dump(block, ods_, x, n);
     return block;
   }
   
@@ -823,24 +876,24 @@ class IMapStream_ {
     // ---------
     template<typename T> T get() {
       get_precond();
-      return Serializer<T>::load(block_, *ids_);
+      // return Serializer<T>::load(block_, *ids_);
+      return serial::Load<T>::load(block_, *ids_);
     }
 
     template<typename T, typename Allocator> T get(Allocator&& alloc) {
       get_precond();
-      auto y = Serializer<T>::load_with_allocator(block_, *ids_, std::forward<Allocator>(alloc));
-      return y;
+      return serial::LoadArgs<T>::load(block_, *ids_, std::forward<Allocator>(alloc));
     }
 
     template<typename T> T& get_to(T& y) {
       get_precond();
-      Serializer<T>::load_to(block_, *ids_, y);
+      serial::LoadTo<T>::load(block_, *ids_, y);
       return y;
     }
 
     template<typename T> T* get_to(T* y) {
       get_precond();
-      Serializer<T*>::load_to(block_, *ids_, y);
+      serial::LoadPtr<T>::load(block_, *ids_, y);
       return y;
     }
 
