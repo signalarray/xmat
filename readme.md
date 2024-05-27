@@ -3,10 +3,12 @@ TODO
 ```
 cpp:
 - [+++++-----] cpp TCP full test
-- [++++++++--] change data format implementation
-- [+++++++++-] add big-little endian support
+               - sudden shutdown handling
 - [++++------] check MapStream<file>
-- [++++------] check NArray->serial
+- [++++++----] check NArray->serial
+- [+++++++++-] change data format implementation
+               - Head.BOM check-error
+- [+++++++++-] add big-little endian support
 ```
 
 # XMAT Format Description

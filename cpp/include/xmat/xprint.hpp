@@ -43,7 +43,7 @@ std::ostream& operator<<(std::ostream& os, const XHead& h) {
 std::ostream& operator<<(std::ostream& os, const XBlock& b) {
   // ones(5, 6) + 1j >> name: <cx_double, tid>, F:[5, 6]
   const size_t sw = 15;
-  const size_t sw2 = 3;
+  const size_t sw2 = 4;
   os  << std::setw(sw) << b.name_.data() << ": "
       << b.o_ << ", " 
       << std::setw(sw2) << std::hex << static_cast<int>(b.t_) << std::dec << ", " 
@@ -58,10 +58,10 @@ std::ostream& operator<<(std::ostream& os, const XBlock& b) {
 template<typename IDStreamT>
 std::ostream& print(std::ostream& os, IMapStream_<IDStreamT>& xin) {
   os << xin.head() 
-     << "blocks:\n";
+     << "blocks:            name: ord: tid:  nd: name: shape:\n";
   int n = 0;
   for(auto& item : xin) { 
-    os << "[" << std::setw(4) << n++ << "] " << item << "\n";
+    os << "[" << std::setw(5) << n++ << "] " << item << "\n";
   }
   return os;
 }

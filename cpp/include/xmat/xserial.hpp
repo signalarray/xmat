@@ -266,7 +266,7 @@ struct Load<std::array<T, N>, std::enable_if_t<DataStreamType<T>::enabled>> {
 
 
 // xmat::NArrayInterface_
-////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 template<typename Derived, typename T, size_t ND, MOrder MOrderT, typename IntT>
 struct Dump<NArrayInterface_<Derived, T, ND, MOrderT, IntT>, 
             std::enable_if_t<DataStreamType<T>::enabled>>
@@ -343,7 +343,7 @@ struct LoadTo<NArrayInterface_<Derived, T, ND, MOrderT, IntT>,
 
 
 // xmat::NArray
-////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 template<typename T, size_t ND, class MemSourceT, MOrder MOrderT, typename IntT>
 struct Dump<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
             std::enable_if_t<DataStreamType<T>::enabled>>
@@ -390,7 +390,7 @@ struct LoadArgs<NArray_<T, ND, MemSourceT, MOrderT, IntT>,
 };
 
 template<typename T, size_t ND, class MemSourceT, MOrder MOrderT, typename IntT>
-struct LoadTo<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
+struct Load<NArray_<T, ND, MemSourceT, MOrderT, IntT>, 
             std::enable_if_t<DataStreamType<T>::enabled 
             && NArray_<T, ND, MemSourceT, MOrderT, IntT>::k_has_default_constructor>>
 {
@@ -399,7 +399,7 @@ struct LoadTo<NArray_<T, ND, MemSourceT, MOrderT, IntT>,
 
   template<typename IDStreamT>
   static array_t load(XBlock& block, IDStreamT& ids) {
-    LoadArgs<typename array_t::base_t>::load(block, ids, MemSourceT{});
+    return LoadArgs<array_t>::load(block, ids, MemSourceT{});
   }
 };
 } // namespase serial

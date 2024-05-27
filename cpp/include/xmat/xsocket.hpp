@@ -5,7 +5,10 @@
 
 #undef UNICODE
 #define WIN32_LEAN_AND_MEAN   // learn.microsoft.com/ru-ru/windows/win32/winsock/complete-client-code
+
+#ifndef __MINGW32__
 #define NOMINMAX              // stackoverflow.com/questions/22744262
+#endif
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -51,15 +54,25 @@ constexpr portint_t   k_xsport = 27015;
 constexpr const char* k_xsport_str = "27015";
 
 enum class xsstate : int {
-  good,       // all is ok
-  error,      // socket functions errors
-  gaierror,   // ::getaddrinfo error
-  fail,       // logic non-system error
-  numel
+  good          = 1,          // all is ok
+  error         = 1 << 1,     // socket functions errors
+  gaierror      = 1 << 2,     // ::getaddrinfo error
+  fail          = 1 << 3,     // logic non-system error
+  disconnected  = 1 << 4,
+  all           = 1 | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4)
 };
 
-constexpr const char* xsstate_str[static_cast<int>(xsstate::numel)] = 
-  {"good", "error", "gaierror", "fail"};
+constexpr const char * xsstate_label(xsstate state) {
+  switch(state) {
+    case xsstate::good:           return "good";
+    case xsstate::error:          return "error";
+    case xsstate::gaierror:       return "gaierror";
+    case xsstate::fail:           return "fail";
+    case xsstate::disconnected:   return "disconnected";
+    case xsstate::all:            return "all";
+    default: return "wrong xsstate";
+  }
+}
 
 // socket functions namespace
 namespace impl {
@@ -109,7 +122,6 @@ inline std::string err_get_str(int errcode) {
     NULL,
     errcode,
     MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
-    //MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
     reinterpret_cast<LPTSTR>(&buffer),
     0,
     NULL
@@ -119,6 +131,7 @@ inline std::string err_get_str(int errcode) {
   return msg;
 }
 
+/// \brief  ccheck if non-blocking process in progress
 bool non_blocking_in_progress() {
   auto errcode = err_get_code();
   return errcode == WSAEWOULDBLOCK || errcode == WSAEALREADY;
@@ -186,15 +199,25 @@ timeval double2timeval(double timeout) {
 }
 } // namespace impl -----
 
+
 namespace time {
   double  nan() noexcept { return std::numeric_limits<double>::quiet_NaN(); }
   double  inf() noexcept { return std::numeric_limits<double>::infinity(); }
   bool    isnan(double t) noexcept { return std::isnan(t); }
   bool    isinf(double t) noexcept { return !std::isfinite(t); }
+
   void    sleep(double timeout) noexcept { std::this_thread::sleep_for(std::chrono::duration<double>{timeout}); }
+
+  void    yield() noexcept { return std::this_thread::yield(); }
+  
+  // timer
+  using point_t = std::chrono::time_point<std::chrono::steady_clock>;
+  point_t time()          noexcept { return std::chrono::steady_clock::now(); }
+  double  time(point_t t0) noexcept { return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count(); }
 }
 
 
+////////////////////////////////
 class SocketError : public std::runtime_error {
  public:
   SocketError(xsstate state, const char* comment = nullptr, int sys_error_code = 0) 
@@ -203,10 +226,10 @@ class SocketError : public std::runtime_error {
   static std::string make_msg(xsstate state, const char* comment = nullptr, int sys_error_code = 0) {
     std::ostringstream oss;
     oss << "xmat::xsstate-code := " << static_cast<unsigned int>(state) << "\n"
-        << "xmat::xsstate-name := " << xsstate_str[static_cast<unsigned int>(state)] << "\n";
+        << "xmat::xsstate-name := " << xsstate_label(state) << "\n";
 
     if (comment) { 
-      oss << "comment: " << comment << "\n\n"; 
+      oss << "comment::\n" << comment << "\n\n"; 
     }
     
     if (state == xsstate::error) { // print socket-system error msg
@@ -233,6 +256,7 @@ class SocketError : public std::runtime_error {
 };
 
 
+////////////////////////////////
 class SocketStartup {
  public:
 
@@ -281,6 +305,7 @@ class SocketStartup {
 }; // class SocketStartup 
 
 
+////////////////////////////////
 struct IPAddress {
   static IPAddress any() noexcept { return IPAddress{INADDR_ANY}; }
   static IPAddress localhost() noexcept { return IPAddress{INADDR_LOOPBACK}; }
@@ -345,8 +370,48 @@ std::ostream& operator<<(std::ostream& stream, const IPAddress& address) {
 }
 
 
-// ------------------------------------------------------------
-class Socket {
+//////////////////////////
+template<typename Derived>
+struct SocketExceptionHandle {
+  int exceptions() const noexcept { 
+    return static_cast<const Derived*>(this)->exceptions_; 
+  }
+
+  bool exceptions(xsstate state) const noexcept { 
+    return static_cast<int>(state) & exceptions(); 
+  }
+
+  void exceptions(int mask) noexcept { exceptions() = mask; }
+
+  void exceptions_on(xsstate state) noexcept { 
+    exceptions() |= static_cast<int>(state); 
+  }
+
+  void exceptions_off(xsstate state) noexcept {
+    exceptions() &= ~static_cast<int>(state); 
+  }
+
+  xsstate& state() const noexcept { return static_cast<const Derived*>(this)->state_; }
+
+ private:
+  int& exceptions() noexcept { return static_cast<Derived*>(this)->exceptions_; } 
+
+  xsstate& state() noexcept { return static_cast<const Derived*>(this)->state_; }
+
+ protected:
+  SocketExceptionHandle() = default;
+
+  void handle_error(xsstate state_p, const char* comment = nullptr) const {
+    assert(state_p != xsstate::good && "state isn't supposed to be an `ok`");
+    state() = state_p;
+    if (exceptions(state_p)) { throw SocketError(state_p, comment); }
+  }
+};
+
+
+////////////////////////////////
+class Socket : public SocketExceptionHandle<Socket> {
+  friend class SocketExceptionHandle<Socket>;
  public:
   enum class Type { listener, socket, undef, numel };
 
@@ -379,8 +444,8 @@ class Socket {
     std::swap(lhs.is_blocking_,     rhs.is_blocking_);
     std::swap(lhs.is_open_,         rhs.is_open_);
     std::swap(lhs.state_,           rhs.state_);
-    std::swap(lhs.flag_exceptions_, rhs.flag_exceptions_);
     std::swap(lhs.type_,            rhs.type_);
+    std::swap(lhs.exceptions_,      rhs.exceptions_);
   }
 
   bool operator==(const Socket& other) { return socket_id_ == other.socket_id_; }
@@ -404,20 +469,11 @@ class Socket {
 
   bool is_good() const noexcept { return state_ == xsstate::good; }
 
-  xsstate state() const noexcept { return state_; }
+  // xsstate state() const noexcept { return state_; }
 
-  // if val := true, throw exception if eny error
-  // if val := false, set status
-  void exceptions(bool val) noexcept { flag_exceptions_ = val; }
+  // fcckkk. the problemm is state_ is mutable
+  // void hidden_state(xsstate state) const noexcept { state_ = state; }
 
-  bool exceptions() const noexcept { return flag_exceptions_; }
-
-  // true if:
-  // if Listener: listen was called
-  // if Socket::client: connect was called
-  // if Socket::connection: accept was called for it
-  // false if:
-  // close was called
   bool is_open() const noexcept { assert(is_valid() || (!is_valid() && !is_open_)); return is_open_; }
 
   Type type() const noexcept { return type_; }
@@ -426,12 +482,12 @@ class Socket {
 
 
  protected:
-  // See: stackoverflow.com/questions/14038589
-  void handle_error(xsstate state, const char* comment = nullptr) const {
-    assert(state != xsstate::good && "state isn't supposed to be an `ok`");
-    state_ = state;
-    if (exceptions()) { throw SocketError(state, comment); }
-  }
+  // // See: stackoverflow.com/questions/14038589
+  // void handle_error(xsstate state, const char* comment = nullptr) const {
+  //   assert(state != xsstate::good && "state isn't supposed to be an `ok`");
+  //   state_ = state;
+  //   if (exceptions(state)) { throw SocketError(state, comment); }
+  // }
 
  protected:
   Socket(Type type = Type::undef) : type_{type} { SocketStartup::init(); }
@@ -489,23 +545,28 @@ class Socket {
   impl::socket_t socket_id_ = impl::k_invalid_socket;
   bool is_blocking_         = true;
   bool is_open_             = false;
-  mutable xsstate state_    = xsstate::good;
-  bool flag_exceptions_     = true;
   Type type_                = Type::undef;
+  mutable xsstate state_    = xsstate::good;
+  int exceptions_           = static_cast<int>(xsstate::all);
 };
 
 
-// ------------------------------------------------------------
+////////////////////////////////
 class TCPSocket : public Socket {
  public:
   friend class TCPListener;
 
   TCPSocket() : Socket{Socket::Type::socket} {}
 
-  // param[in] timeout:
-  //  if timeout == 0.0: finish immediately
-  //  if time::isinf(timeout): never timeout, and will wait until the first file descriptor is ready
-  //                           the same: ::select(.., timeout := NULL)
+  /// param[in] timeout:
+  ///   if timeout == 0.0: finish immediately
+  ///   if time::isinf(timeout): never timeout, and will wait until the first file descriptor is ready
+  ///     the same: ::select(.., timeout := NULL)
+  ///
+  /// Example:
+  ///   socket.connect(...);
+  ///   if (!socket.is_open()) throw Exception();
+  ///
   void connect(IPAddress address, unsigned int port, double timeout) {
     assert(is_good());
     if (is_valid()) {
@@ -564,13 +625,13 @@ class TCPSocket : public Socket {
         is_open_ = true;
       }
       else {
-        return handle_error(xsstate::error, "xmat::TCPSocket::connect().\n"
+        return handle_error(xsstate::fail, "xmat::TCPSocket::connect().\n"
                                      "non-zero-timeout AND blocking. ::select() \n"
                                      "Connection refused");
       }
     }
     else {
-      return handle_error(xsstate::error, "xmat::TCPSocket::connect().\n"
+      return handle_error(xsstate::fail, "xmat::TCPSocket::connect().\n"
                                    "non-zero-timeout AND blocking. ::select \n"
                                    "Failed to connect before timeout is over");
     }
@@ -603,6 +664,7 @@ class TCPSocket : public Socket {
     }
     is_open_ = true;
   }
+
 
   size_t send(const void* buf, size_t len) {
     assert(is_valid() && is_good());
@@ -674,14 +736,14 @@ class TCPSocket : public Socket {
       handle_error(xsstate::error, "xmat::TCPSocket::recvall(...).\n");
     } 
     else if ( received == 0 ) {
-      handle_error(xsstate::error, "xmat::TCPSocket::recvall(...).\n"
+      handle_error(xsstate::disconnected, "xmat::TCPSocket::recvall(...).\n"
                                    "connection has been closed");
     }
     return static_cast<size_t>(received > 0 ? received : 0);
   }
 
 
-  // param[in] timeout - sec
+  /// param[in] timeout - sec
   void recvall(void* buf, size_t len, double timeout) {
     assert(is_valid() && is_good());
     if (!buf || !len) {
@@ -708,7 +770,7 @@ class TCPSocket : public Socket {
   }
 
 
-  // xmat::BugIn, xmat::BugOut send - recv
+  // xmat::MapStream
   // -------------------------------------
   /// \tparam MemSourceT one of: 
   ///         bbuf_memsource_default, AllocatorMSGlobal<char>, AllocatorMSRef<char>
@@ -716,15 +778,15 @@ class TCPSocket : public Socket {
   void send(const OMapStream_<ODStream_<OBBuf_<MemSourceT>, endian_tag>>& xout, 
             double timeout) 
   {
-    if(xout.buf().is_open()) {
+    if(xout.stream().is_open()) {
       return handle_error(xsstate::fail,
         "TCPSocket::send(BugOut_ xout). xout.buf().is_open() := false. xout must be closed");
     }
-    if(xout.head().total_size == 0) {
+    if(xout.head().total() == 0) {
       return handle_error(xsstate::fail,
         "TCPSocket::send(BugOut_ xout). xout.head().total_size := 0. xout must be not empty");
     }
-    sendall(xout.buf().data(), xout.buf().size(), timeout);
+    sendall(xout.stream().data(), xout.stream().size(), timeout);
   }
 
 
@@ -732,14 +794,14 @@ class TCPSocket : public Socket {
   void recv(IMapStream_<IDStream_<IBBuf_<MemSourceT>, endian_tag>>& xin, 
             double timeout)
   {
-    if(xin.buf().size() != 0) {
+    if(xin.stream().size() != 0) {
       return handle_error(xsstate::fail,
         "TCPSocket::recv(BugIn_ xin). xin.buf().size() :!= 0. xout must be empty");
     }
     
     // -- try read Head
-    char* ptr_head = xin.buf().push_reserve(k_head_size);
-    recvall(static_cast<void*>(ptr_head), k_head_size, timeout);
+    char* ptr_head = xin.stream().push_reserve(XHead::nbytes());
+    recvall(static_cast<void*>(ptr_head), XHead::nbytes(), timeout);
     if (!is_good()){
       return handle_error(xsstate::fail, 
         "TCPSocket::recv(BugIn_ xin). recvall(header) failed");
@@ -747,19 +809,19 @@ class TCPSocket : public Socket {
     xin.scan_head();
 
     // -- read Data. if fail -> throw Exception
-    assert(xin.head().total_size >= k_head_size);
-    size_t data_size = xin.head().total_size - k_head_size;
-    char* ptr_data = xin.buf().push_reserve(data_size);
+    assert(xin.head().total() >= XHead::nbytes());
+    size_t data_size = xin.head().total() - XHead::nbytes();
+    char* ptr_data = xin.stream().push_reserve(data_size);
     recvall(static_cast<void*>(ptr_data), data_size, timeout);
     if(!is_good()) {
-      return handle_error(xsstate::fail, 
+      return handle_error(xsstate::fail,
         "TCPSocket::recv(BugIn_ xin). recvall(data) failed");
     }
-    xin.buf().push_all();
+    xin.stream().push_all();
   }
 
 
-  // ------------------------------
+  // connection address info
   IPAddress remoteaddress() const {
     assert(is_valid());
     auto out = IPAddress::none();
@@ -806,7 +868,7 @@ class TCPSocket : public Socket {
 };
 
 
-// ------------------------------------------------------------
+///////////////////////////////////
 class TCPListener : public Socket {
  public:
   
@@ -867,7 +929,9 @@ class TCPListener : public Socket {
 };
 
 
-class Selector {
+////////////////
+class Selector : public SocketExceptionHandle<Selector> {
+  friend class SocketExceptionHandle<Selector>;
  public:
   virtual ~Selector() { }
 
@@ -930,10 +994,10 @@ class Selector {
     size_ = 0;
   }
 
-  // param[in] timeout:
-  //  if timeout == 0.0: finish immediately
-  //  if time::isinf(timeout): never timeout, and will wait until the first file descriptor is ready
-  //                           the same: ::select(.., timeout := NULL)
+  /// param[in] timeout:
+  ///  if timeout == 0.0: finish immediately
+  ///  if time::isinf(timeout): never timeout, and will wait until the first file descriptor is ready
+  ///                           the same: ::select(.., timeout := NULL)
   int wait(double timeout) {
     timeval time = impl::double2timeval(timeout);
     ready_ = all_;
@@ -941,6 +1005,10 @@ class Selector {
     // Wait until one of the sockets is ready for reading, or timeout is reached
     // The first parameter is ignored on Windows
     int count = ::select(max_socket_id_ + 1, &ready_, NULL, NULL, time::isinf(timeout) ? NULL : &time);
+    if (count = impl::k_socket_error) {
+      handle_error(xsstate::error, "xmat::Selector::wait(..): ::select returns error.");
+      return 0;
+    }
     return count;
   }
 
@@ -958,17 +1026,6 @@ class Selector {
     return FD_ISSET(socket.handle(), &ready_) != 0;
   }
 
-
-  bool exceptions() const noexcept { return flag_exceptions_; }
-
-  void exceptions(bool value) noexcept { flag_exceptions_ = value; }
-
-  void handle_error(xsstate state, const char* comment = nullptr) const {
-    assert(state != xsstate::good && "state isn't supposed to be an `ok`");
-    state_ = state;
-    if (exceptions()) { throw SocketError(state, comment); }
-  }
-
  private:
   fd_set all_;
   fd_set ready_;
@@ -976,19 +1033,20 @@ class Selector {
                           // in Windows: only for compatibility with Berkeley sockets.
   int size_ = 0;
 
-  mutable xsstate state_ = xsstate::good;
-  bool flag_exceptions_  = true;
+  mutable xsstate state_    = xsstate::good;
+  int exceptions_           = static_cast<int>(xsstate::all);
 };
 
 
-template<size_t Nsock = 8, size_t Nlis = 2>
+///////////////////////////////////////////
+template<size_t Nsockets = 8, size_t Nlisteners = 2>
 class TCP_ {
  public:
 
   TCP_() {}
 
   TCPListener* listener(unsigned short port, IPAddress address = IPAddress{0, 0, 0, 0}, int nconn = SOMAXCONN) {
-    if (n_lis_ >= max_nlis()) {
+    if (n_lis_ >= max_listeners()) {
       throw SocketError(xsstate::fail, "xmat::TCPGroup::listener(...). out_of_range");
     }
     TCPListener item{};
@@ -1004,12 +1062,12 @@ class TCP_ {
 
 
   TCPSocket* client(IPAddress address, unsigned int port, double timeout) {
-    if (n_sock_ >= max_nsock()) {
-      throw SocketError(xsstate::fail, "xmat::TCPGroup::socket(...). out_of_range");
+    if (n_sock_ >= max_sockets()) {
+      throw SocketError(xsstate::fail, "xmat::TCP_<>::socket(...). out_of_range");
     }
     TCPSocket item{};
     item.exceptions(exceptions());
-    item.connect(address, port);
+    item.connect(address, port, timeout);
     if (!item.is_good()) {
       return nullptr;
     }
@@ -1019,15 +1077,21 @@ class TCP_ {
   }
 
 
+  /// \exception throw xmat::SocketError if exceptions(), else: return nullptr
+  ///   error cases:
+  ///   - sockets exceeds socket-storage length
+  ///   - unregistered listener
+  ///   - listener.is_ready() := false
+  ///   - listener.accept is unsuccessful
   TCPSocket* accept(TCPListener* listener) {
-    if (n_sock_ >= max_nsock()) {
-      throw SocketError(xsstate::fail, "xmat::TCPGroup::accept(...). out_of_range");
+    if (n_sock_ >= max_sockets()) {
+      throw SocketError(xsstate::fail, "xmat::TCP_<>::accept(...). out_of_range");
     }
     if (!contains(listener)) {
-      throw SocketError(xsstate::fail, "xmat::TCPGroup::accept(listener). alien listener");
+      throw SocketError(xsstate::fail, "xmat::TCP_<>::accept(listener). alien listener");
     }
     if (!is_ready(listener)) {
-      throw SocketError(xsstate::fail, "xmat::TCPGroup::accept(listener). listener isn't ready");
+      throw SocketError(xsstate::fail, "xmat::TCP_<>::accept(listener). listener isn't ready");
     }
 
     TCPSocket remote{};
@@ -1037,12 +1101,26 @@ class TCP_ {
     }
     selector_.add(remote);
     sockets_[n_sock_++] = std::move(remote);
-    return &sockets_[n_sock_-1];
+    return sockets_.data() + n_sock_ - 1;
   }
 
   // selector-methods
   // ----------------
-  int wait(double timeout) { return selector_.wait(timeout); }
+  /// \brief wait untill any socket is ready
+  /// \return number of sockets that aren't ready
+  int wait(double timeout, std::nothrow_t) {
+    return selector_.wait(timeout); 
+  }
+
+  /// \brief wait untill any socket is ready
+  /// \exception throw if waiting is unsuccessful
+  int wait(double timeout) {
+    int out = wait(timeout, std::nothrow);
+    if (!out) {
+      throw SocketError(xsstate::fail, "xmat::TCP_<>::wait(): timeout exceed");
+    }
+    return out;
+  }
 
   bool is_ready(Socket* socket) { assert(contains(socket)); return selector_.is_ready(*socket); }
 
@@ -1068,12 +1146,12 @@ class TCP_ {
     if (socket->type() == Socket::Type::listener) {
       auto it = std::find_if(listeners_.begin(), listeners_.end(),
                              [tgt = socket] (const TCPListener& item) { return &item == tgt; });
-      return it != listeners_.begin();
+      return it != listeners_.end();
     } 
     else {
       auto it = std::find_if(sockets_.begin(), sockets_.end(),
                              [tgt = socket] (const TCPSocket& item) { return &item == tgt; });
-      return it != sockets_.begin();
+      return it != sockets_.end();
     }
   }
 
@@ -1081,18 +1159,18 @@ class TCP_ {
   template<typename Iter, typename T>
   friend void support_remove_element(Iter begin, Iter end, T* element, Selector& sel) {
     // look up by pointer
-    auto it = std::find_if(begin, end, 
+    auto it = std::find_if(begin, 
+                           end, 
                            [tgt = element] (const T& item) { return &item == tgt; });
     if (it == end) {
-      throw SocketError(xsstate::fail, 
-                        "xmat::TCPGroup::remove(sock). socket isn`t in this group");
+      throw SocketError(xsstate::fail, "xmat::TCP_<>::remove(sock). socket isn`t in this group");
     }
     sel.remove(*element);
     std::move(it+1, end, it);
   }
 
  public:
-  bool exceptions() const noexcept { return selector_.exceptions(); }
+  int exceptions() const noexcept { return selector_.exceptions(); }
 
   void exceptions(bool value) noexcept { selector_.exceptions(value); }
 
@@ -1104,18 +1182,22 @@ class TCP_ {
 
   size_t nsock() const noexcept { return n_sock_; }
 
-  static size_t max_nlis() noexcept { return Nlis; }
+  static size_t max_listeners() noexcept { return Nlisteners; }
 
-  static size_t max_nsock() noexcept { return Nsock; }
+  static size_t max_sockets() noexcept { return Nsockets; }
 
  private:
-  std::array<TCPListener, Nlis> listeners_;
-  std::array<TCPSocket, Nsock> sockets_;
+  std::array<TCPListener, Nlisteners> listeners_;
+  std::array<TCPSocket, Nsockets> sockets_;
   size_t n_lis_ = 0;
   size_t n_sock_ = 0;
 
   Selector selector_;
 };
+
+
+///////////////////////////////
+using TCP = TCP_<4, 2>;
 
 } // namespace xmat
 

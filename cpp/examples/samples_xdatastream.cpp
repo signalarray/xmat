@@ -127,18 +127,18 @@ int sample_2() {
     printv(block_a0->name());
   }
 
-  // print(1, "get<T>", 0, '-');
-  // printv(block_a0->pos());
-  // printv(block_a0->nbytes());
-  // printv(block_a0->data_pos());
-  // auto a0_back = block_a0.get<int>();
-  // printv(block_a0.get<int>());
+  print(1, "get<T>", 0, '-');
+  printv(block_a0->pos());
+  printv(block_a0->nbytes());
+  printv(block_a0->data_pos());
+  auto a0_back = block_a0.get<int>();
+  printv(block_a0.get<int>());
 
-  // print(1, "get_to<T>", 0, '-');
-  // int xx = -1;
-  // printv(xx);
-  // printv(block_a0.get_to(xx));
-  // printv(xin.at("a1").get_to(xx));
+  print(1, "get_to<T>", 0, '-');
+  int xx = -1;
+  printv(xx);
+  printv(block_a0.get_to(xx));
+  printv(xin.at("a1").get_to(xx));
   
   print(1, "FINISH", 1, '=');
   return 1;
@@ -233,6 +233,7 @@ int sample_3() {
   printv(d0_);
 
   auto d1_ = xin.at("d1").get<xmat::NArray<int, 2>>();
+  *kOutStream << d1_;
   printv(d1_);
   //
   print(1, "FINISH", 1, '=');
@@ -245,7 +246,7 @@ int main() {
   print("SAMPLES: " __FILE__, 1);
 
   try {
-    sample_2();
+    sample_3();
   }
   catch (std::exception& err) {
     print(1, "----------------------\n");

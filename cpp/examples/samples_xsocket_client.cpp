@@ -94,6 +94,31 @@ int sample_5() {
   print(1, "FINISH", 1, '=');
   return 1;
 }
+
+int sample_6() {
+  print(__PRETTY_FUNCTION__, 1);
+  print("TCP_<>: listener. accept", 0, '-');
+
+  const size_t N = 8;
+  int b0[N] = {1, 2, 3, 4, 5, 6, 7, 8};
+  char b1[N] = "absdef";
+
+  xmat::TCP_<1, 1> tcp{};
+  auto socket = tcp.client(xmat::IPAddress::localhost(), xmat::k_xsport, 4.0);
+  
+  xmat::OMapStream<> xout{};
+  xout.setitem("a0", 4);
+  xout.setitem_n("b0", b0, N);
+  xout.setitem_n("b1", b1, N);
+  xout.close();
+  printv(xout);
+
+  socket->send(xout, 1.0);
+
+  print(1, "FINISH", 1, '=');
+  return 1;
+}
+
 }
 
 
@@ -101,7 +126,7 @@ int main() {
   print(2, __FILE__, 0, '-');
   
   try {
-    sample_5();
+    sample_6();
   }
   catch (std::exception& err) {
     print("\n+++++++++++++++++++++\n");

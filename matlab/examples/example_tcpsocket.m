@@ -8,8 +8,8 @@ function example_tcpsocket(mode, case_)
 %
 % Examples:
 % ---------
-% example_tcpsocket("client")
-% example_tcpsocket("server")
+% example_tcpsocket("client", 1)
+% example_tcpsocket("server", 1)
 
 clc
 % clear

@@ -466,7 +466,7 @@ struct xvoid { };
 
 XMAT_REGTYPE(0x00,    1,    "v",    xvoid);
 XMAT_REGTYPE(0x01,    1,    "c",    char);
-XMAT_REGTYPE(0x02,    1,    "?",    bool);
+// XMAT_REGTYPE(0x02,    1,    "?",    bool);   // not shure how to implement
 
 XMAT_REGTYPE(0x10,    1,    "i0",   std::int8_t);
 XMAT_REGTYPE(0x11,    2,    "i1",   std::int16_t);
@@ -501,7 +501,7 @@ inline constexpr size_t sizeof_data_stream_type(sf::xuint8_t id) noexcept {
   switch (id) {
   case DataStreamType<  xvoid                   >::id:  return DataStreamType<xvoid>::size;
   case DataStreamType<  char                    >::id:  return DataStreamType<char>::size;
-  case DataStreamType<  bool                    >::id:  return DataStreamType<bool>::size;
+  // case DataStreamType<  bool                    >::id:  return DataStreamType<bool>::size;
 
   case DataStreamType<  std::int8_t             >::id:  return DataStreamType<std::int8_t>::size;
   case DataStreamType<  std::int16_t            >::id:  return DataStreamType<std::int16_t>::size;
@@ -874,24 +874,27 @@ class IMapStream_ {
 
     // load data
     // ---------
-    template<typename T> T get() {
+    template<typename T, typename std::enable_if_t<serial::Load<T>::enabled, int> = 0> 
+    T get() {
       get_precond();
-      // return Serializer<T>::load(block_, *ids_);
       return serial::Load<T>::load(block_, *ids_);
     }
 
-    template<typename T, typename Allocator> T get(Allocator&& alloc) {
+    template<typename T, typename Allocator, typename std::enable_if_t<serial::LoadArgs<T>::enabled, int> = 0> 
+    T get(Allocator&& alloc) {
       get_precond();
       return serial::LoadArgs<T>::load(block_, *ids_, std::forward<Allocator>(alloc));
     }
 
-    template<typename T> T& get_to(T& y) {
+    template<typename T, typename std::enable_if_t<serial::LoadTo<T>::enabled, int> = 0> 
+    T& get_to(T& y) {
       get_precond();
       serial::LoadTo<T>::load(block_, *ids_, y);
       return y;
     }
 
-    template<typename T> T* get_to(T* y) {
+    template<typename T, typename std::enable_if_t<serial::LoadPtr<T>::enabled, int> = 0> 
+    T* get_to(T* y) {
       get_precond();
       serial::LoadPtr<T>::load(block_, *ids_, y);
       return y;
@@ -943,7 +946,7 @@ class IMapStream_ {
 
   // getters
   // -------
-  bool empty() const noexcept { return head_.total_size_; }
+  bool empty() const noexcept { return !head_.total_size_; }
 
   XHead& head() { return head_; }
 

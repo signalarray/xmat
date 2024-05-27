@@ -164,8 +164,30 @@ int sample_5() {
 
 int sample_6() {
   print(__PRETTY_FUNCTION__, 1);
-  print("TCPGroup: listener. accept", 0, '-');
+  print("TCP_<>: listener. accept", 0, '-');
 
+  xmat::TCP_<1, 1> tcp{};
+  auto listener = tcp.listener(xmat::k_xsport);
+  tcp.wait(10.0);
+  if(!tcp.is_ready(listener)) {
+    throw std::runtime_error("!tcp.is_ready(listener)");
+  }
+  auto socket = tcp.accept(listener);
+  printv(socket->remoteaddress());
+
+  xmat::IMapStream<> xin{};
+  
+  print(1, "start sleep: ", 0, '-');
+  xmat::time::sleep(4.0);
+  print(1, "end sleep sleep: ", 0, '-');
+
+  tcp.wait(1.0);
+  socket->recv(xin, 1.0);
+  if(xin.empty()) {
+    throw std::runtime_error("xin.empty()");
+  }
+  printv(xin);
+  
   print(1, "FINISH", 1, '=');
   return 1;
 }
@@ -188,4 +210,3 @@ int main() {
   print(1, "FINISH" __FILE__, 1, '=');
   return EXIT_SUCCESS;
 }
-

@@ -307,7 +307,7 @@ int sample_6() {
 
 int main() {
   print("START: " __FILE__, 0, '=');
-  sample_6();
+  sample_5();
   print("END: " __FILE__, 0, '=');
   return EXIT_SUCCESS;
 }

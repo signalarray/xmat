@@ -1,0 +1,16 @@
+
+add_executable(0_server 0_server.cpp)
+add_executable(0_client 0_client.cpp)
+add_executable(1_server 1_server.cpp)
+add_executable(1_client 1_client.cpp)
+add_executable(2_server 2_server.cpp)
+add_executable(2_client 2_client.cpp)
+
+if (WIN32)
+target_link_libraries(0_server ws2_32)
+target_link_libraries(0_client ws2_32)
+target_link_libraries(1_server ws2_32)
+target_link_libraries(1_client ws2_32)
+target_link_libraries(2_server ws2_32)
+target_link_libraries(2_client ws2_32)
+endif()
