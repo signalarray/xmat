@@ -221,7 +221,10 @@ namespace time {
 class SocketError : public std::runtime_error {
  public:
   SocketError(xsstate state, const char* comment = nullptr, int sys_error_code = 0) 
-   : std::runtime_error{make_msg(state, comment, sys_error_code)} { }
+   : std::runtime_error{make_msg(state, comment, sys_error_code)},
+     state{state},
+     errorcode{sys_error_code != 0 ? sys_error_code : impl::err_get_code()}
+   { }
 
   static std::string make_msg(xsstate state, const char* comment = nullptr, int sys_error_code = 0) {
     std::ostringstream oss;
@@ -253,6 +256,9 @@ class SocketError : public std::runtime_error {
     }
     return oss.str();
   }
+
+  xsstate state = xsstate::good;
+  int errorcode = 0;
 };
 
 
@@ -669,23 +675,20 @@ class TCPSocket : public Socket {
   size_t send(const void* buf, size_t len) {
     assert(is_valid() && is_good());
 
-    size_t sent = 0;
+    int total = 0;
     if (!buf || !len) {
       handle_error(xsstate::fail, "TCPSocket::send(...). !buf || !len");
-      return sent;
+      return total;
     }
 
-    for (sent = 0; sent < len;) {
-      auto result = ::send(socket_id_,
-                           static_cast<const char*>(buf) + sent,
-                           static_cast<impl::size_p>(len - sent),
-                           impl::k_tcp_send_flags);
-      if (result < 0) {
-        handle_error(xsstate::error, "TCPSocket::send() failed");
-      }
-      sent += static_cast<size_t>(result);
+    total = ::send(socket_id_,
+                   static_cast<const char*>(buf),
+                   static_cast<impl::size_p>(len),
+                   impl::k_tcp_send_flags);
+    if (total < 0) {
+      handle_error(xsstate::error, "TCPSocket::send() failed");
     }
-    return sent;
+    return total;
   }
 
 
@@ -701,12 +704,10 @@ class TCPSocket : public Socket {
 
     size_t total = 0, left = len;
     while(total < len && std::chrono::system_clock::now() < tend) {
-      auto sent = ::send(socket_id_,
-                         static_cast<const char*>(buf) + total,
-                         static_cast<impl::size_p>(left),
-                         impl::k_tcp_send_flags);
-      if (sent == impl::k_socket_error) {
-        return handle_error(xsstate::error, "TCPSocket::send() failed");
+      size_t sent = send(static_cast<const char*>(buf) + total,
+                       static_cast<impl::size_p>(left));
+      if (!is_good()) {
+        return;
       }
 
       assert(sent >= 0);
@@ -1005,7 +1006,7 @@ class Selector : public SocketExceptionHandle<Selector> {
     // Wait until one of the sockets is ready for reading, or timeout is reached
     // The first parameter is ignored on Windows
     int count = ::select(max_socket_id_ + 1, &ready_, NULL, NULL, time::isinf(timeout) ? NULL : &time);
-    if (count = impl::k_socket_error) {
+    if (count == impl::k_socket_error) {
       handle_error(xsstate::error, "xmat::Selector::wait(..): ::select returns error.");
       return 0;
     }
@@ -1036,6 +1037,22 @@ class Selector : public SocketExceptionHandle<Selector> {
   mutable xsstate state_    = xsstate::good;
   int exceptions_           = static_cast<int>(xsstate::all);
 };
+
+
+  namespace impl {
+  template<typename Iter, typename T>
+  void support_remove_element(Iter begin, Iter end, T* element, Selector& sel) {
+    // look up by pointer
+    auto it = std::find_if(begin, 
+                           end, 
+                           [tgt = element] (const T& item) { return &item == tgt; });
+    if (it == end) {
+      throw SocketError(xsstate::fail, "xmat::TCP_<>::remove(sock). socket isn`t in this group");
+    }
+    sel.remove(*element);
+    std::move(it+1, end, it);
+  }
+  } // namespace impl
 
 
 ///////////////////////////////////////////
@@ -1125,6 +1142,7 @@ class TCP_ {
   bool is_ready(Socket* socket) { assert(contains(socket)); return selector_.is_ready(*socket); }
 
   // remove ----
+  // \TODO change impl::support_remove_element declaration
   void remove(Socket* socket) {
     assert(contains(socket));
     if (socket->type() == Socket::Type::undef) {
@@ -1132,11 +1150,11 @@ class TCP_ {
                         "xmat::TCPGroup::remove(..). socket.type() == Socket::Type::undef");
     }
     if (socket->type() == Socket::Type::listener) {
-      support_remove_element(listeners_.begin(), listeners_.end(), socket, selector_);
+      impl::support_remove_element(listeners_.begin(), listeners_.end(), socket, selector_);
       --n_lis_;
     } 
     else {
-      support_remove_element(sockets_.begin(), sockets_.end(), socket, selector_);
+      impl::support_remove_element(sockets_.begin(), sockets_.end(), socket, selector_);
       --n_sock_;
     }
   }
@@ -1153,20 +1171,6 @@ class TCP_ {
                              [tgt = socket] (const TCPSocket& item) { return &item == tgt; });
       return it != sockets_.end();
     }
-  }
-
- private:
-  template<typename Iter, typename T>
-  friend void support_remove_element(Iter begin, Iter end, T* element, Selector& sel) {
-    // look up by pointer
-    auto it = std::find_if(begin, 
-                           end, 
-                           [tgt = element] (const T& item) { return &item == tgt; });
-    if (it == end) {
-      throw SocketError(xsstate::fail, "xmat::TCP_<>::remove(sock). socket isn`t in this group");
-    }
-    sel.remove(*element);
-    std::move(it+1, end, it);
   }
 
  public:
@@ -1186,7 +1190,7 @@ class TCP_ {
 
   static size_t max_sockets() noexcept { return Nsockets; }
 
- private:
+ public:
   std::array<TCPListener, Nlisteners> listeners_;
   std::array<TCPSocket, Nsockets> sockets_;
   size_t n_lis_ = 0;

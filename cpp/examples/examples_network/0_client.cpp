@@ -1,8 +1,7 @@
-/*
-server code in: 0_server.cpp
-*/
-
+#include <cstring>
 #include <iostream>
+#include <sstream>
+#include <algorithm>
 #include <exception>
 
 #include "../../include/xmat/xsocket.hpp"
@@ -14,20 +13,48 @@ server code in: 0_server.cpp
 std::ostream* kOutStream = &std::cout;
 
 
-int main() {
-  print(2, __FILE__, 0, '-');
-  
-  try {
-    
+int main() {  
+  using std::cout;
+  char buf[xmat::k_xsbuf_size + 1] = {};
 
-    print(1, "successfully finish", 1, '=');
+  try {
+    // connect
+    xmat::TCP tcp{};
+    auto socket = tcp.client(xmat::IPAddress::localhost(), xmat::k_xsport, 1.0);
+    cout << "connected\n";
+
+    // send messages
+    const size_t N = 6;
+    for (int n = 0, Nlast = N-1; n < N; ++n) {
+      cout << "iter " << n << "\n";
+      auto oss = std::ostringstream{};
+      if (n == Nlast) {
+        oss << "close";
+      }
+      else {
+        oss << "message: [" << n << "] content";
+      }
+      std::string str = oss.str();
+      str.resize(xmat::k_xsbuf_size);
+
+      socket->sendall(str.c_str(), str.size(), 1.0);
+      cout << "sent:  " << oss.str() << "\n";
+
+      if (n == Nlast) break;
+
+      // waiting for reply
+      std::fill_n(buf, xmat::k_xsbuf_size, '\0');
+      socket->recvall(buf, xmat::k_xsbuf_size, 1.0);
+      cout << "reply: " << buf << "\n";
+
+      xmat::time::sleep(1.5);
+    }
+    cout << "finish successfully\n";
   }
   catch (std::exception& err) {
-    print("\n+++++++++++++++++++++\n");
-    print_mv("exception in main: message: >>\n", err.what());
-    print("\n+++++++++++++++++++++\n");
+    cout << "exception in main: message: >>\n" 
+         << err.what();
     return EXIT_FAILURE;
   }
-  print(1, "FINISH" __FILE__, 1, '=');
   return EXIT_SUCCESS;
 }

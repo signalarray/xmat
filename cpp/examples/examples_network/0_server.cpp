@@ -23,54 +23,64 @@ note over Socket, Client: close()
 *use for show diagramm: www.plantuml.com/plantuml/uml
 */
 
+#include <cstring>
 #include <iostream>
+#include <algorithm>
 #include <exception>
 
 #include "../../include/xmat/xsocket.hpp"
 #include "../../include/xmat/xserial.hpp"
 #include "../../include/xmat/xprint.hpp"
-#include "../common.hpp"
-
-
-std::ostream* kOutStream = &std::cout;
 
 
 int main() {
-  print(2, __FILE__, 0, '-');
-  
+  using std::cout;
   char buf[xmat::k_xsbuf_size + 1] = {};
 
   try {
-    // accept
-    xmat::TCP_<1, 1> tcp{};
+    // accept connection
+    xmat::TCP tcp{};
     auto listener = tcp.listener(xmat::k_xsport);
-    tcp.wait(10.0);
+    tcp.wait(2.0);
     auto socket = tcp.accept(listener);
-    printv(socket->remoteaddress());
+    tcp.remove(listener); // not necessary
+    cout << "connection success\n";
+    cout << socket->remoteaddress() << "\n";
 
-    // read-write
-    size_t n = 0, cnt_job = 0;
+    // receive
+    size_t n = 0, k = 0;
     while(true) {
       const int count = tcp.wait(0.0, std::nothrow);
       if (count) {
-        socket->recvall(buf, xmat::k_xsbuf_size, 1e-3);
-        *kOutStream << "msg num: " << n << ": " << buf << "\n";
-        cnt_job = 0;
+        // receive and process the message if ready
+        socket->recvall(buf, xmat::k_xsbuf_size, 1.0);
+        cout << "message num: " << n++ << ": " << buf << "\n";
+        if (!std::strcmp(buf, "close")) {
+          cout << "command `close` received\n";
+          break;
+        }
+
+        // send msg back
+        const char* tail = ".reply";
+        std::copy_n(tail, std::strlen(tail), buf + std::strlen(buf));
+        socket->sendall(buf, xmat::k_xsbuf_size, 1.0);
+
+        // --
+        std::fill_n(buf, xmat::k_xsbuf_size, '\0');
+        k = 0;
       } else {
         // do some other job
-        xmat::time::sleep(1.0);
-        *kOutStream << "other-job: " << cnt_job << "\n";
+        xmat::time::sleep(0.125);
+        cout << "other-job: " << k++ << "\n";
       }
     }
-
-    print(1, "successfully finish", 1, '=');
+    xmat::time::sleep(8.0);
+    cout << "finish successfully\n";
   }
   catch (std::exception& err) {
-    print("\n+++++++++++++++++++++\n");
-    print_mv("exception in main: message: >>\n", err.what());
-    print("\n+++++++++++++++++++++\n");
+    cout << "exception in main: message: >>\n" 
+         << err.what();
     return EXIT_FAILURE;
   }
-  print(1, "FINISH" __FILE__, 1, '=');
   return EXIT_SUCCESS;
 }

@@ -5,9 +5,10 @@ temp_*
 
 # char `/` mark just folders in the root of project
 /build*/
+/_build*/
 
 # every folder with name like: _folder/, folder/_folder
-**/_*
+# **/_*
 
 # util folders like: .vscode/, .idea/
 **/.*/
@@ -16,3 +17,8 @@ temp_*
 *.asv
 *.mat
 *.fig
+
+
+# python
+**/__pycache__/
+*.ini

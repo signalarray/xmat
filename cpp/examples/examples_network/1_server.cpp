@@ -26,32 +26,69 @@ deactivate Client
 @enduml
 */
 
+#include <cstring>
 #include <iostream>
+#include <algorithm>
 #include <exception>
 
 #include "../../include/xmat/xsocket.hpp"
 #include "../../include/xmat/xserial.hpp"
 #include "../../include/xmat/xprint.hpp"
-#include "../common.hpp"
-
-
-std::ostream* kOutStream = &std::cout;
 
 
 int main() {
-  print(2, __FILE__, 0, '-');
-  
-  try {
-    
+  using std::cout;
+  char buf[xmat::k_xsbuf_size + 1] = {};
 
-    print(1, "successfully finish", 1, '=');
+  try {
+    // accept connection
+    xmat::TCP tcp{};
+    auto listener = tcp.listener(xmat::k_xsport);
+    tcp.wait(2.0);
+    auto socket = tcp.accept(listener);
+    tcp.remove(listener); // not necessary
+    cout << "connection success\n";
+    cout << socket->remoteaddress() << "\n";
+
+    // socket busy
+    // ----------------------------
+    cout << "sleeps for a while\n";
+    xmat::time::sleep(2.0);
+
+    // receive
+    cout << "receive all messages\n";
+    size_t n = 0;
+    while(true) {
+      const int count = tcp.wait(1.0, std::nothrow);
+      if (!count) {
+        break;
+      }
+      xmat::IMapStream<> xin{};
+      socket->recv(xin, 1.0);
+      if (xin.at("stop") != xin.end()) {
+        cout << "\n**command `stop` reveiced\n";
+        break;
+      }
+
+      auto field_n = xin.at("n").get<std::uint64_t>();
+      auto field_msg = xin.at("msg").get<std::string>();
+      cout << "\n" 
+           << "xin.at(`n`).get<std::uint64_t>() " << field_n << "\n"
+           << "xin.at(`msg`).get<std::string>() " << field_msg << "\n";
+
+      xmat::OMapStream<> xout{};
+      xout.setitem("n", field_n);
+      xout.setitem("msg", field_msg + ".reply");
+      xout.close();
+      socket->send(xout, 1.0);
+    }
+
+    cout << "finish successfully\n";
   }
   catch (std::exception& err) {
-    print("\n+++++++++++++++++++++\n");
-    print_mv("exception in main: message: >>\n", err.what());
-    print("\n+++++++++++++++++++++\n");
+    cout << "\nexception in main: message: >>\n" 
+         << err.what();
     return EXIT_FAILURE;
   }
-  print(1, "FINISH" __FILE__, 1, '=');
   return EXIT_SUCCESS;
 }
