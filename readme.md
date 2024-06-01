@@ -2,10 +2,10 @@ TODO
 ====
 ```
 cpp:
-- [+++++-----] cpp TCP full test
-               - sudden shutdown handling
 - [++++------] check MapStream<file>
-- [++++++----] check NArray->serial
+- [++++++++--] cpp TCP full test
+               + sudden shutdown handling
+- [++++++++--] check NArray->serial
 - [+++++++++-] change data format implementation
                - Head.BOM check-error
 - [+++++++++-] add big-little endian support
