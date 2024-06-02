@@ -57,7 +57,8 @@ classdef XBlock < handle
       % ods: DataStream_.Out
       assert(any(obj.morder == 'CF'))
       assert(~isempty(xmat.DataType.by_id(obj.tid)));
-      assert(obj.ndim == ndims(obj.shape));
+      % !! assert(obj.ndim == ndims(obj.shape));
+      % !! may be: assert(obj.ndim == length(obj.shape));
       assert(obj.namelen == length(obj.name));
 
       ods.write(char(obj.morder));

@@ -1,8 +1,10 @@
 from collections import namedtuple
 
 import numpy as np
+
 import xmat
 from xmat import xtype
+from common import temp_data_folder
 
 
 def samples_0():
@@ -63,8 +65,27 @@ def sample_3():
 	print(i1)
 
 
+def sample_4():
+	print(' xmat.DStreamFile')
+
+	x0 = np.array(range(4), dtype='i2')
+
+	folder_data = temp_data_folder
+	filename = folder_data.joinpath('py_0.xmat')
+
+	ods = xmat.DStreamFile.out(filename)
+	ods.write(x0)
+	ods.close()
+
+	ids = xmat.DStreamFile.in_(filename)
+	i0 = ids.read(xtype.int32)
+	i1 = ids.read(xtype.int32)
+	print(i0)
+	print(i1)
+
+
 def main():
-	sample_3()
+	sample_4()
 
 
 if __name__ == '__main__':

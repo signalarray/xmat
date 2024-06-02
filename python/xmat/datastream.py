@@ -10,11 +10,13 @@ https://numpy.org/doc/stable/reference/arrays.dtypes.html#specifying-and-constru
 """
 
 from sys import byteorder
-from typing import Union
+from typing import Union, Any
 from abc import ABC, abstractmethod
 from enum import Enum
 from itertools import chain
 from collections import namedtuple
+from pathlib import Path
+import warnings
 
 import numpy as np
 
@@ -33,6 +35,12 @@ class Endian(Enum):
 		if value == '=':
 			value = Endian.NATIVE.value
 		return Endian(value)
+
+	@staticmethod
+	def other(endian):
+		if endian not in (Endian.LITTLE, Endian.BIG):
+			raise ValueError('xmat.Endian.other(): expect only Endian.LITTLE, Endian.BIG')
+		return Endian.LITTLE if endian == Endian.BIG else Endian.BIG
 
 
 # types supported
@@ -117,11 +125,11 @@ class DStream(ABC):
 		self.seek(pos, 0)
 		return n
 
-	def write(self, A, move: bool = False):
+	def write(self, x, move: bool = False):
 		"""
 		Parameters
 		----------
-		A:
+		x:
 			supported types:
 				numpy.ndarray
 				DTYPES_STR
@@ -145,7 +153,7 @@ class DStream(ABC):
 		ods.write((1.0j, 2.0j, 3.0j))
 		ods.write(["line0", "line1"]) # fail
 		"""
-		return self._write_bytes(self.tobytes(A, move))
+		return self._write_bytes(self.tobytes(x, move))
 
 	def tobytes(self, x, move: bool = False):
 		""" implementation for write(..)
@@ -179,7 +187,7 @@ class DStream(ABC):
 		else:
 			raise ValueError("xmat.DStream.write(A): unsupported type: {}".format(type(x)))
 
-	def read(self, dtype: Union[type, np.dtype], numel: int = 0):
+	def read(self, dtype: Union[type, np.dtype], numel: int = 0) -> Any:
 		"""
 		Parameters
 		----------
@@ -187,7 +195,7 @@ class DStream(ABC):
 			if numel := 0 returns scalar
 			if dtype in (str, bytes, bytearray): `numel` must be grater 0
 
-		dtype: type | np.dtype
+		dtype: type | np.dtype | xtype
 			if dtype is type: it can be: DTYPES_STR
 			if dtype is np.dtype it can be: like - DTYPES_SCALAR_NUMPY
 
@@ -207,7 +215,7 @@ class DStream(ABC):
 		if dtype in DTYPES_SCALAR_NUMPY:
 			# numpy.array or scalar
 			numel_ = numel if numel > 0 else 1
-			buf: bytearray = self._read_bytes(dtype.itemsize * numel_)
+			buf = self._read_bytes(dtype.itemsize * numel_)
 			y = np.frombuffer(buf, dtype, numel_)
 
 			if Endian.make(dtype.byteorder) != self.endian:
@@ -220,7 +228,7 @@ class DStream(ABC):
 			if numel < 1:
 				raise ValueError(f'xmat.DStream.read(.., numel): `numel` must be > 0 if dtype is: {dtype}')
 
-			buf: bytearray = self._read_bytes(numel)
+			buf = self._read_bytes(numel)
 			if dtype == str:
 				y = buf.decode('ascii')
 				return y
@@ -231,11 +239,11 @@ class DStream(ABC):
 			raise TypeError(f"xmat.DStream.read(..): unspported `dtype`: {dtype}")
 
 	@abstractmethod
-	def _write_bytes(self, buffer):
+	def _write_bytes(self, buf: bytes) -> None:
 		pass
 
 	@abstractmethod
-	def _read_bytes(self, n):
+	def _read_bytes(self, n) -> bytes:
 		pass
 
 
@@ -243,16 +251,24 @@ class DStreamFile(DStream):
 	"""	www.w3schools.com/python/python_ref_file.asp
 	"""
 
-	def __init__(self, filename: str, mode: str):
+	def __init__(self, filename: Union[str, Path], mode: str):
 		"""
 		Parameters
 		----------
-		filename: str
+		filename: str or pathlib.Path
 		mode: {'w', 'r'}
 		"""
 
 		DStream.__init__(self, mode)
-		self.file = open(mode + 'b')
+		self.file = open(filename, mode + 'b')
+
+	@staticmethod
+	def out(filename: Union[str, Path]):
+		return DStreamFile(filename, 'w')
+
+	@staticmethod
+	def in_(filename: Union[str, Path]):
+		return DStreamFile(filename, 'r')
 
 	def close(self):
 		return self.file.close()
@@ -263,11 +279,11 @@ class DStreamFile(DStream):
 	def seek(self, offset, whence):
 		return self.file.seek(offset, whence)
 
-	def _write_bytes(self, buffer):
-		pass
+	def _write_bytes(self, buf):
+		self.file.write(buf)
 
 	def _read_bytes(self, n):
-		pass
+		return self.file.read(n)
 
 
 class DStreamByte(DStream):
@@ -341,3 +357,180 @@ class DStreamByte(DStream):
 		buf = self.buf[self.cursor:self.cursor+n]
 		self.cursor += n
 		return buf
+
+
+# -------------------------------
+# xmat format
+# -------------------------------
+SIGNATURE = b'xmat'
+SIGN_SIZE = len(SIGNATURE)
+BOM = np.int16(1)
+SIZEOF_XSIZE_T = np.uint8(8)
+MAX_NDIM = np.uint8(8)
+MAX_NAME = np.uint8(32)
+
+
+DTYPE = {
+	np.uint8(int('0x01', 0)): xtype.str,
+
+	np.uint8(int('0x10', 0)): xtype.int8,
+	np.uint8(int('0x11', 0)): xtype.int16,
+	np.uint8(int('0x12', 0)): xtype.int32,
+	np.uint8(int('0x13', 0)): xtype.int64,
+
+	np.uint8(int('0x20', 0)): xtype.uint8,
+	np.uint8(int('0x21', 0)): xtype.uint16,
+	np.uint8(int('0x22', 0)): xtype.uint32,
+	np.uint8(int('0x23', 0)): xtype.uint64,
+
+	np.uint8(int('0x52', 0)): xtype.float32,
+	np.uint8(int('0x53', 0)): xtype.float64,
+
+	np.uint8(int('0x62', 0)): xtype.complex64,
+	np.uint8(int('0x63', 0)): xtype.complex128,
+}
+
+
+DTID = {type_: tid for tid, type_ in DTYPE.items()}
+
+
+class XHead:
+	def __init__(self):
+		self.sign: bytes = SIGNATURE										# Sign
+		self.bom: np.uint16 = BOM												# BOM
+		self.total: np.uint64 = np.uint64(0)						# Total Size
+		self.sizeof_int: np.uint8 = SIZEOF_XSIZE_T			# I
+		self.maxndim: np.uint8 = MAX_NDIM								# S
+		self.maxname: np.uint8 = MAX_NAME								# B
+
+	def dump(self, ods: DStream):
+		if len(self.sign) != SIGN_SIZE:
+			raise ValueError(f'xmat.XHead.dump(..): wrong `signature`: {self.sign}')
+
+		ods.write(self.sign)
+		ods.write(np.uint16(self.bom))
+		ods.write(np.uint64(self.total))
+		ods.write(np.uint8(self.sizeof_int))
+		ods.write(np.uint8(self.maxndim))
+		ods.write(np.uint8(self.maxname))
+
+	def load(self, ids: DStream):
+		self.sign = ids.read(xtype.bytes, SIGN_SIZE)
+		if self.sign != SIGNATURE:
+			raise ValueError(f'xmat.XHead.load(..): wrong `signature`: {self.sign}')
+
+		self.bom: np.uint16 = ids.read(xtype.uint16)
+		if self.bom != BOM:
+			ids.endian = Endian.other(ids.endian)
+			bom_ = self.bom.swapbytes()
+			if bom_ != BOM:
+				raise ValueError(f'xmat.XHead.load(..): wrong `bom`: {self.bom}|{bom_}')
+			warnings.warn(f'xmat.XHead.load():  wrong endian value {Endian.other(ids.endian)} changed to: {ids.endian}')
+			self.bom = bom_
+
+		self.total = ids.read(xtype.uint64)
+		self.sizeof_int = ids.read(xtype.uint8)
+		self.maxndim = ids.read(xtype.uint8)
+		self.maxname = ids.read(xtype.uint8)
+
+		if self.sizeof_int != SIZEOF_XSIZE_T:
+			raise ValueError(f'xmat.XHead.load(..): wrong `size of int` value: {self.sizeof_int}')
+
+	@staticmethod
+	def nbytes():
+		return 17
+
+	def __repr__(self):
+		pass
+
+
+class XBlock:
+	def __init__(self):
+		self.morder: bytes = b'C'												# o
+		self.tid: np.uint8 = np.uint8(0)								# t
+		self.ndim: np.uint8 = np.uint8(0)								# s
+		self.namelen: np.uint8 = np.uint8(0)						# b
+		self.shape: tuple[np.uint64] = tuple()					# Shape[ndim]
+		self.name: str = ''															# Block Name[namelen]
+
+		self.pos: int = 0
+
+	def make(self, x, name: str = 'default'):
+		# self.morder
+		self.namelen = len(name)
+		self.name = name
+
+		if isinstance(x, np.ndarray):
+			# numpy.ndarray
+			if x.dtype not in DTYPES_SCALAR_NUMPY:
+				raise TypeError(f"xmat.DStream.write(..): x is numpy.ndarray. unsupported dtype: {x.dtype}")
+
+			self.tid = DTID[x.dtype]
+			self.ndim = x.ndim
+			self.shape = x.shape
+
+		elif isinstance(x, DTYPES_STR):
+			# str-like: str is supposed the only ascii encoding string
+			self.tid = DTID[xtype.str]
+			self.ndim = np.uint8(1)
+			self.shape = (len(x), )
+
+		elif isinstance(x, DTYPES_SCALAR_NUMPY):
+			# numpy scalar types
+			self.tid = DTID[type(x)]
+			self.ndim = np.uint8(0)
+			self.shape = (0, )
+
+		else:
+			raise ValueError("xmat.DStream.write(A): unsupported type: {}".format(type(x)))
+
+	def dump(self, ods: DStream):
+		# raise ValueError(f'xmat.XBlock.dump')
+		if self.morder not in 'CF':
+			raise ValueError(f'xmat.XBlock.dump(): wrong `morder`: {self.morder}')
+		if self.tid not in DTYPE:
+			raise ValueError(f'xmat.XBlock.dump(): wrong `tid`: {self.tid}')
+		if self.ndim != len(self.shape):
+			raise ValueError(f'xmat.XBlock.dump(): wrong `ndim`')
+		if self.namelen != len(self.name):
+			raise ValueError(f'xmat.XBlock.dump(): wrong `namelen`')
+
+		ods.write(self.morder.decode('ascii'))
+		ods.write(np.uint8(self.tid))
+		ods.write(np.uint8(self.ndim))
+		ods.write(np.uint8(self.namelen))
+		ods.write(b'\0\0\0\0')
+		ods.write(np.array(self.shape, dtype=np.uint64))
+		ods.write(self.name)
+
+	def load(self, ids: DStream):
+		self.pos = ids.tell()
+
+		self.morder = ids.read(xtype.bytes, 1)
+		self.tid = ids.read(xtype.uint8)
+		self.ndim = ids.read(xtype.uint8)
+		self.namelen = ids.read(xtype.uint8)
+		space_ = ids.read(xtype.bytes, 4)
+		if space_ != b'\0\0\0\0':
+			raise ValueError(f'xmat.XBlock.load(): wrong zeros-space: {space_}')
+		self.shape = ids.read(xtype.uint64, self.ndim)
+		self.name = ids.read(xtype.str, self.namelen)
+
+	# --------------------------
+	def typesize(self):
+		pass
+
+	def nbytes(self):
+		pass
+
+	def data_pos(self):
+		pass
+
+	def data_nbytes(self):
+		pass
+
+	def numel(self):
+		pass
+
+	def __repr__(self):
+		pass
