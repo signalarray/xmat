@@ -84,8 +84,82 @@ def sample_4():
 	print(i1)
 
 
+def sample_5():
+	print('xmat.XHead:')
+
+	ods = xmat.DStreamByte.out()
+	h = xmat.XHead()
+	h.total = 1024
+	print(h)
+	h.dump(ods)
+
+	ids = xmat.DStreamByte.in_()
+	ids.set_buffer(ods.buf)
+	h2 = xmat.XHead()
+	print('h2 default: \n', h2)
+
+	h2.load(ids)
+	print('h2 load: \n', h2)
+
+
+def sample_6():
+	print('xmat.XBlock:')
+
+	x = np.array(range(8))
+	b0 = xmat.XBlock(np.int32(1))
+	print(b0)
+	b0 = xmat.XBlock(x)
+	print(b0)
+	b0 = xmat.XBlock(x[::2])
+	print(b0)
+	b0 = xmat.XBlock('string')
+	print(b0)
+
+	b0 = xmat.XBlock(np.uint16(31), 'specific-name')
+	print('\n repr scalar:\n', b0.__repr___())
+
+
+def sample_7():
+	print('xmat.MapStreamOut')
+
+	x = np.array(range(8))
+
+	xout = xmat.MapStreamOut.byte()
+	xout['a'] = x
+	xout['long-name'] = np.int64(1024)
+	xout.close()
+
+	xin = xmat.MapStreamIn.byte(xout.dstream.buf)
+	print(xin)
+	a = xin['a']
+	print(a)
+	b = xin['long-name']
+	print(b)
+
+
+def sample_8():
+	print('xmat.MapStream_.file')
+
+	folder_data = temp_data_folder
+	filename = folder_data.joinpath('py_0.xmat')
+
+	x = np.array(range(8))
+
+	xout = xmat.MapStreamOut.file(filename)
+	xout['a'] = x
+	xout['long-name'] = np.int64(1024)
+	xout.close()
+
+	xin = xmat.MapStreamIn.file(filename)
+	print(xin)
+	a = xin['a']
+	print(a)
+	b = xin['long-name']
+	print(b)
+
+
 def main():
-	sample_4()
+	sample_8()
 
 
 if __name__ == '__main__':

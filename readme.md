@@ -2,6 +2,7 @@ TODO
 ====
 ```
 cpp:
+- [----------] check cpp XBlock.load.shape with 0 ndim/for scalar
 - [++++------] check MapStream<file>
 - [++++++++--] cpp TCP full test
                + sudden shutdown handling
