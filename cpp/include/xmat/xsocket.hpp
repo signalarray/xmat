@@ -419,7 +419,7 @@ struct SocketExceptionHandle {
 class Socket : public SocketExceptionHandle<Socket> {
   friend class SocketExceptionHandle<Socket>;
  public:
-  enum class Type { listener, socket, undef, numel };
+  enum class Type { listener, socket, undef};
 
   virtual ~Socket() { 
     if (!is_valid()) { return; }

@@ -769,6 +769,9 @@ class MapStreamIn(MapStream):
 	def __contains__(self, item: str):
 		return item in self.map
 
+	def keys(self):
+		return self.map.keys()
+
 	# scan and load blocks
 	def scan(self):
 		self.scan_head()
