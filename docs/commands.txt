@@ -1,0 +1,2 @@
+C:\_python\py310\Scripts\sphinx-build -M html ./source/ ../_build/docs
+sphinx-build -M html ./source/ ../_build/docs
