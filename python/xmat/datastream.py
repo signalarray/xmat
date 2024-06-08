@@ -9,6 +9,7 @@ numpy dtype format and codes
 https://numpy.org/doc/stable/reference/arrays.dtypes.html#specifying-and-constructing-data-types
 """
 import os
+import struct
 from sys import byteorder
 from typing import Union, Any
 from abc import ABC, abstractmethod
@@ -38,7 +39,7 @@ class Endian(Enum):
 		return Endian(value)
 
 	@staticmethod
-	def other(endian):
+	def change(endian):
 		if endian not in (Endian.LITTLE, Endian.BIG):
 			raise ValueError('xmat.Endian.other(): expect only Endian.LITTLE, Endian.BIG')
 		return Endian.LITTLE if endian == Endian.BIG else Endian.BIG
@@ -46,10 +47,29 @@ class Endian(Enum):
 
 # types supported
 # /////////////////////////////////////////////////
+DTYPES_SCALAR_NATIVE = (int, float, complex, bool)
+
+_DTypeNative = namedtuple('_DataTypeNative', 'type numpytype format itemsize')
+"""
+Attributes:
+type: class type
+format: str
+	docs.python.org/3/library/struct.html#format-characters
+size: int
+	size in bytes 
+"""
+
+DTYPES_SCALAR_NATIVE_TABLE = {
+	int: _DTypeNative(int, np.int64, 'q', 8),
+	float: _DTypeNative(float, np.float64, 'd', 8),
+	complex: _DTypeNative(complex, np.complex128, '', 16),
+	bool: _DTypeNative(bool, np.bool_, '?', '1')
+}
+
 DTYPES_STR = (str, bytes, bytearray)
 
 DTYPES_SCALAR_NUMPY = (
-	np.bytes_,
+	np.bytes_,    np.bool_,
 	np.int8,      np.int16,     np.int32,  np.int64,
 	np.uint8,	    np.uint16,    np.uint32, np.uint64,
 	np.float32,	  np.float64,
@@ -58,7 +78,7 @@ DTYPES_SCALAR_NUMPY = (
 
 _ReadType = namedtuple(
 	'_ReadType',
-	('bytes_ int8 int16 int32 int64 uint8 uint16 uint32 uint64 float32 float64 complex64 complex128'
+	('bytes_ bool int8 int16 int32 int64 uint8 uint16 uint32 uint64 float32 float64 complex64 complex128'
 		' str bytes bytearray')
 )
 
@@ -68,6 +88,23 @@ xtype = _ReadType(*_xtype_args)
 """ DStream.read(dtype) arguments """
 
 
+def to_array(x_) -> np.array:
+	"""
+	Parameters:
+		x_: iterable
+	"""
+	iter_ = iter(x_)
+	sample_ = next(iter_)
+	type_ = type(sample_)
+	if not isinstance(sample_, DTYPES_SCALAR_NATIVE):
+		raise TypeError(
+			f'xmat.DStream.pack(x, ..): x is iterable with wrong item-type: {type(sample_)}')
+	dtype_ = DTYPES_SCALAR_NATIVE_TABLE[type_].numpytype
+	return np.fromiter(chain((sample_,), iter_), dtype_)
+
+
+# binary-data-stream
+# ------------------
 class DStream(ABC):
 
 	def __init__(self, mode: str, endian: Endian = Endian.NATIVE):
@@ -164,9 +201,9 @@ class DStream(ABC):
 		ods.write((1.0j, 2.0j, 3.0j))
 		ods.write(["line0", "line1"]) # fail
 		"""
-		return self._write_bytes(self.tobytes(x, move))
+		return self._write_bytes(self.pack(x, move))
 
-	def tobytes(self, x, move: bool = False):
+	def pack(self, x, move: bool = False):
 		""" implementation for write(..)
 		"""
 		if not self.writable():
@@ -174,26 +211,43 @@ class DStream(ABC):
 
 		if isinstance(x, np.ndarray):
 			# numpy.ndarray
+			# -------------
 			if x.dtype not in DTYPES_SCALAR_NUMPY:
 				raise TypeError(f"xmat.DStream.write(..): x is numpy.ndarray. unsupported dtype: {x.dtype}")
-
 			if Endian.make(x.dtype.byteorder) != self.endian:
 				x = x.byteswap(inplace=move)
-
 			return x.tobytes()
+
+		elif isinstance(x, DTYPES_SCALAR_NUMPY):
+			# numpy scalar types
+			# ------------------
+			if Endian.make(x.dtype.byteorder) != self.endian:
+				x = x.byteswap(inplace=move)
+			return x.tobytes()
+
+		elif isinstance(x, DTYPES_SCALAR_NATIVE):
+			# python native-numeric-times
+			# --------------------
+			if type(x) is complex:
+				format = self.endian.value + 'd'
+				buf = struct.pack(format, x.real, x.imag)
+			else:
+				format = self.endian.value + DTYPES_SCALAR_NATIVE_TABLE[type(x)].format
+				buf = struct.pack(format, x)
+			return buf
 
 		elif isinstance(x, DTYPES_STR):
 			# python built-in strings and bytes
+			# --------------------
 			if isinstance(x, str):
 				return x.encode('ascii')
 			else:
 				return x
 
-		elif isinstance(x, DTYPES_SCALAR_NUMPY):
-			# numpy scalar types
-			if Endian.make(x.dtype.byteorder) != self.endian:
-				x = x.byteswap(inplace=move)
-			return x.tobytes()
+		elif hasattr(x, '__iter__'):
+			# python iterable native-numeric-types
+			# -------------
+			return self.pack(to_array(x), move)
 
 		else:
 			raise ValueError("xmat.DStream.write(A): unsupported type: {}".format(type(x)))
@@ -406,8 +460,9 @@ MAX_NDIM = np.uint8(8)
 MAX_NAME = np.uint8(32)
 
 
-DTYPE = {
-	np.uint8(int('0x01', 0)): xtype.str,
+DTYPEOUT = {
+	np.uint8(int('0x01', 0)): xtype.bytes,
+	np.uint8(int('0x02', 0)): xtype.bool,
 
 	np.uint8(int('0x10', 0)): xtype.int8,
 	np.uint8(int('0x11', 0)): xtype.int16,
@@ -427,7 +482,7 @@ DTYPE = {
 }
 
 
-DTID = {type_: tid for tid, type_ in DTYPE.items()}
+DTYPEIN = {type_: tid for tid, type_ in DTYPEOUT.items()}
 
 
 class XHead:
@@ -457,11 +512,11 @@ class XHead:
 
 		self.bom: np.uint16 = ids.read_num(xtype.uint16)
 		if self.bom != BOM:
-			ids.endian = Endian.other(ids.endian)
-			bom_ = self.bom.swapbytes()
+			ids.endian = Endian.change(ids.endian)
+			bom_ = self.bom.byteswap()
 			if bom_ != BOM:
 				raise ValueError(f'xmat.XHead.load(..): wrong `bom`: {self.bom}|{bom_}')
-			warnings.warn(f'xmat.XHead.load():  wrong endian value {Endian.other(ids.endian)} changed to: {ids.endian}')
+			warnings.warn(f'xmat.XHead.load():  wrong endian value {Endian.change(ids.endian)} changed to: {ids.endian}')
 			self.bom = bom_
 
 		self.total = ids.read_num(xtype.uint64)
@@ -489,65 +544,68 @@ class XHead:
 
 
 class XBlock:
-	def __init__(self, x=None, name: str = 'default'):
+	def __init__(self):
 		self.pos: int = 0
 
 		self.morder: str = 'C'														# o
-		if x is None:
-			self.tid: np.uint8 = np.uint8(0)								# t
-			self.ndim: np.uint8 = np.uint8(0)								# s
-			self.namelen: np.uint8 = np.uint8(0)						# b
-			self.shape: tuple[np.uint64] = tuple()					# Shape[ndim]
-			self.name: str = ''															# Block Name[namelen]
-			return
+		self.tid: np.uint8 = np.uint8(0)								# t
+		self.ndim: np.uint8 = np.uint8(0)								# s
+		self.namelen: np.uint8 = np.uint8(0)						# b
+		self.shape: tuple[np.uint64] = tuple()					# Shape[ndim]
+		self.name: str = ''															# Block Name[namelen]
 
-		# if value provided
+	def dumpvar(self, x, name, ods: DStream = None, numpy_move = False):
 		self.namelen = len(name)
 		self.name = name
 
 		if isinstance(x, np.ndarray):
 			# numpy.ndarray
+			# -------------
 			if x.dtype not in DTYPES_SCALAR_NUMPY:
 				raise TypeError(
 					f"xmat.DStream.write(..): x is numpy.ndarray. unsupported dtype: {x.dtype}")
 
-			self.tid = DTID[x.dtype]
+			self.tid = DTYPEIN[x.dtype]
 			self.ndim = x.ndim
 			self.shape = x.shape
 
 		elif isinstance(x, DTYPES_SCALAR_NUMPY):
 			# numpy scalar types
-			self.tid = DTID[np.dtype(type(x))]
+			# ------------------
+			self.tid = DTYPEIN[np.dtype(type(x))]
 			self.ndim = np.uint8(0)
 			self.shape = x.shape
 
+		elif isinstance(x, DTYPES_SCALAR_NATIVE):
+			# numpy scalar types
+			# ------------------
+			type_ = np.dtype(DTYPES_SCALAR_NATIVE_TABLE[type(x)].numpytype)
+			self.tid = DTYPEIN[type_]
+			self.ndim = np.uint8(0)
+			self.shape = 0
+
 		elif isinstance(x, DTYPES_STR):
 			# str-like: str is supposed the only ascii encoding string
-			self.tid = DTID[xtype.str]
+			self.tid = DTYPEIN[xtype.bytes]
 			self.ndim = np.uint8(1)
 			self.shape = (len(x),)
+
+		elif hasattr(x, '__iter__'):
+			self.dumpvar(to_array(x), name, ods, numpy_move=True)
+			return
 
 		else:
 			raise ValueError("xmat.DStream.write(A): unsupported type: {}".format(type(x)))
 
-	def data(self, x) -> bytes:
-		if isinstance(x, np.ndarray):
-			return x.tobytes(self.morder)
-		elif isinstance(x, DTYPES_SCALAR_NUMPY):
-			return x.tobytes()
-		elif isinstance(x, DTYPES_STR):
-			if isinstance(x, str):
-				return x.encode('ascii')
-			else:
-				return x
-		else:
-			raise TypeError(f"xmat.XBlock.data(): wrong x.type: {type(x)}")
+		if ods:
+			self.dump(ods)
+			ods.write(x, numpy_move)
 
 	def dump(self, ods: DStream):
 		# raise ValueError(f'xmat.XBlock.dump')
 		if self.morder not in 'CF':
 			raise ValueError(f'xmat.XBlock.dump(): wrong `morder`: {self.morder}')
-		if self.tid not in DTYPE:
+		if self.tid not in DTYPEOUT:
 			raise ValueError(f'xmat.XBlock.dump(): wrong `tid`: {self.tid}')
 		# if self.ndim == len(self.shape):
 		# 	raise ValueError(f'xmat.XBlock.dump(): wrong `ndim`')
@@ -578,7 +636,7 @@ class XBlock:
 		self.name = ids.read(xtype.str, self.namelen)
 
 	def typesize(self) -> int:
-		return 1 if DTYPE[self.tid] is xtype.str else DTYPE[self.tid].itemsize
+		return 1 if DTYPEOUT[self.tid] is xtype.bytes else DTYPEOUT[self.tid].itemsize
 
 	def nbytes(self) -> int:
 		return 8 + SIZEOF_XSIZE_T * self.ndim + self.namelen
@@ -597,7 +655,7 @@ class XBlock:
 
 	def __format__(self, format_spec):
 		w = int(format_spec)
-		return f"{self.name:>{w}}: id: 0x{self.tid:02x} {str(DTYPE[self.tid]):>16} {self.morder}:{self.shape}"
+		return f"{self.name:>{w}}: id: 0x{self.tid:02x} {str(DTYPEOUT[self.tid]):>16} {self.morder}:{self.shape}"
 
 	def __repr___(self):
 		s = (
@@ -676,16 +734,10 @@ class MapStreamOut(MapStream):
 		self.dstream.write(self.head.total)
 		self.dstream.close()
 
-	def setitem(self, name: str, x):
+	def setitem(self, name: str, x, npmove=False):
 		if name in self.names_list:
 			raise ValueError(f"xmat.MapStreamOut.setitem(name, ...): name '{name}' is already in")
-
-		b = XBlock(x, name)
-		b.dump(self.dstream)
-		bytes_ = b.data(x)
-		if b.data_nbytes() != len(bytes_):
-			raise RuntimeError('xmat.MapStreamOut.setitem(...): assert failed: b.nbytes() != len(bytes_)')
-		self.dstream.write(bytes_)
+		XBlock().dumpvar(x, name, self.dstream, npmove)
 
 	def __setitem__(self, key, value):
 		return self.setitem(key, value)
@@ -693,6 +745,12 @@ class MapStreamOut(MapStream):
 
 class MapStreamIn(MapStream):
 	"""
+	Attributes
+	----------
+	encoding: str {'', 'ascii', 'utf-8', ...}
+		if encoding != '' -> decode all bytes in stream to str with encoding. buf.decode(encoding) -> str
+		docs.python.org/3/library/codecs.html#standard-encodings
+
 	Examples:
 	xin = xmat.MapStreamIn.byte()
 	xin.push_buffer(--bytes--)
@@ -707,8 +765,9 @@ class MapStreamIn(MapStream):
 		if not self.dstream.readable():
 			raise ValueError(f'xmat.MapStreamIn(): wrong stream.mode: must be `readable`')
 
-		self.map = dict()
+		self.encoding: str = ''
 
+		self.map = dict()
 		if ready_for_scan:
 			self.scan()
 
@@ -739,37 +798,40 @@ class MapStreamIn(MapStream):
 			raise KeyError(f"xmat.MapStreamIn.getitem(name): name: `{name}` not in")
 
 		b: XBlock = self.map[name]
-		type_ = DTYPE[b.tid]
+		type_ = DTYPEOUT[b.tid]
 		self.dstream.seek(b.data_pos(), os.SEEK_SET)
 
 		if type_ in DTYPES_SCALAR_NUMPY:
 			# numpy type
 			if b.ndim == 0:
 				return self.dstream.read_num(type_)
-
 			else:
 				y: np.ndarray = self.dstream.read(type_, b.numel())
 				y.reshape(b.shape, order=b.morder)
 				return y
 
-		elif type_ is xtype.str:
+		elif type_ is xtype.bytes:
 			# load string
-			y = self.dstream.read(type_, b.numel())
-			return y
+			y: bytes = self.dstream.read(type_, b.numel())
+			if self.encoding:
+				return y.decode(self.encoding)
+			else:
+				return y
 
 		else:
-			raise ValueError(f"unexpected DTYPE[xblock.tid]: {type}")
+			raise ValueError(f"unexpected DTYPE[xblock.tid]: {type_}")
 
 	def __getitem__(self, name):
 		return self.getitem(name)
 
 	def getall(self):
-		pass
+		out = {name: self.getitem(name) for name in self.keys()}
 
 	def __contains__(self, item: str):
 		return item in self.map
 
 	def keys(self):
+		# all = {name: xin.getitem(name) for name in self.keys()}
 		return self.map.keys()
 
 	# scan and load blocks

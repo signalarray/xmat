@@ -1,4 +1,10 @@
+import sys
 from pathlib import Path
+
+from importlib.util import find_spec
+if not find_spec('xmat'):
+	sys.path.append(str(Path(__file__).parents[1]))
+
 
 temp_data_folder: Path = Path(__file__).parents[2].joinpath('data')
 

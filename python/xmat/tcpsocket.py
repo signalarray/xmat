@@ -1,12 +1,21 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Union, Any
+from itertools import chain
 
 import time
 import socket
 import select
 
 from . import datastream as xds
+
+
+PORT = 27015
+BUFSIZE = 1024
+
+IPANY = '0.0.0.0'
+IPHOST = IPANY
+IPLOCALHOST = '127.0.0.1'
 
 
 class SocketMode(Enum):
@@ -37,7 +46,7 @@ class _TCPSocket(ABC):
 
 	def close(self):
 		if self.mode != SocketMode.INVALID:
-			self.close()
+			self.socket.close()
 			self.mode = SocketMode.INVALID
 
 	def islistener(self):
@@ -80,7 +89,7 @@ class TCPConnection(_TCPSocket):
 	def recv_(self, nbytes: int) -> bytearray:
 		buf = bytearray(nbytes)
 		buffer = memoryview(buf)
-		total = int(nbytes)
+		total = nbytes
 		while total:
 			nrcvd = self.socket.recv_into(buffer, total)
 			buffer = buffer[nrcvd:]
@@ -105,8 +114,8 @@ class TCPConnection(_TCPSocket):
 		xin.push_buffer(hbuf)
 		xin.scan_head()
 
-		ndbuf = xin.head.total - xds.XHead.nbytes()
-		dbuf = xin.recv_(ndbuf)
+		ndbuf = int(xin.head.total - xds.XHead.nbytes())
+		dbuf = self.recv_(ndbuf)
 		xin.push_buffer(dbuf)
 		xin.scan_data()
 		return xin
@@ -159,6 +168,11 @@ class SocketCallback(ABC):
 
 
 class TCPService:
+
+	LISTENERS = 'listeners'
+	CONNECTIONS = 'connections'
+	ALL = 'all'
+
 	def __init__(self):
 		self.connections = []
 		self.listeners = []
@@ -169,7 +183,12 @@ class TCPService:
 		self.connections.append(connection)
 		return connection
 
-	def listener(self, address: tuple[str, int], backlog: int) -> TCPListener:
+	def listener(self, address: tuple[str, int], backlog: int = 4) -> TCPListener:
+		"""
+		Parameters:
+			address: (IP: str, PORT: int)
+			bakclog: int, = 4
+		"""
 		listener = TCPListener(address, backlog)
 		self.listeners.append(listener)
 		return listener
@@ -186,7 +205,7 @@ class TCPService:
 		self.connections.append(connection)
 		return connection
 
-	def close(self, socket: _TCPSocket):
+	def remove(self, socket: _TCPSocket):
 		if socket in self.listeners:
 			self.listeners.remove(socket)
 		elif socket in self.connections:
@@ -195,7 +214,13 @@ class TCPService:
 			raise ValueError(f"xmat.TCPService.remove(socket): socket is not in _")
 		socket.close()
 
-	def wait(self, mode: str = 'all', timeout: float = None) -> tuple[list[TCPListener], list[TCPConnection]]:
+	def close(self):
+		for _ in chain(self.listeners, self.connections):
+			self.remove(_)
+		self.listeners = []
+		self.connections = []
+
+	def wait(self, mode: str = ALL, timeout: float = None) -> tuple[list[TCPListener], list[TCPConnection]]:
 		"""
 		Parameters:
 		mode: str {'listeners', 'connections', 'all'}. 'all'
@@ -211,16 +236,16 @@ class TCPService:
 			list of selected connections that are ready for receive
 		"""
 		listeners_, connections_ = [], []
-		if mode not in ('listeners', 'connections', 'all'):
+		if mode not in (self.LISTENERS, self.CONNECTIONS, self.ALL):
 			raise ValueError(f"xmat.TCPService.wait(mode, ): wrong mode: {mode}. \
 													expected ('listeners', 'connections', 'all')")
-		if mode in ('all', 'listeners'):
+		if mode in (self.ALL, self.LISTENERS):
 			listeners_, *_ = select.select(self.listeners, [], [], timeout)
-		if mode in ('all', 'connections'):
+		if mode in (self.ALL, self.CONNECTIONS):
 			connections, *_ = select.select(self.connections, [], [], timeout)
 		return listeners_, connections_
 
-	def process(self, mode: str = 'all', timeout: float = None) -> list[TCPConnection]:
+	def process(self, mode: str = ALL, timeout: float = None) -> list[TCPConnection]:
 		"""
 		Parameters:
 		same as .wait(mode, timeout) method
@@ -240,5 +265,5 @@ class TCPService:
 			xin = connection.recv()
 			connection.callback.run(connection, xin)
 			if not connection.isvalid():
-				self.close(connection)
+				self.remove(connection)
 		return newconnections

@@ -63,15 +63,15 @@ Socket Communication Examples
 ==========================
 Example 0:
 ----------
-![socket-example-0](/doc/resources/socket-scheme-0.png)
+![socket-example-0](/docs/resources/socket-scheme-0.png)
 
 Example 1:
 --------------
-![socket-example-1](/doc/resources/socket-scheme-1.png)
+![socket-example-1](/docs/resources/socket-scheme-1.png)
 
 Example 2:
 --------------
-![socket-example-2](/doc/resources/socket-scheme-2.png)
+![socket-example-2](/docs/resources/socket-scheme-2.png)
 
 # Types Supported
 

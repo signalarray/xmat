@@ -1,4 +1,5 @@
 from collections import namedtuple
+import struct
 
 import numpy as np
 
@@ -44,9 +45,9 @@ def sample_2():
 	print(x1)
 
 	ods = xmat.DStreamByte('w')
-	print(ods.tobytes(x0))
-	print(ods.tobytes(x1))
-	print(ods.tobytes(1))
+	print(ods.pack(x0))
+	print(ods.pack(x1))
+	print(ods.pack(1))
 
 
 def sample_3():
@@ -158,8 +159,31 @@ def sample_8():
 	print(b)
 
 
+def sample_9():
+	print('xmat.MapStreamOut')
+
+	x = np.array(range(8))
+
+	xout = xmat.MapStreamOut.byte(xmat.Endian.BIG)
+	xout['x0'] = "string-content"
+	xout['x1'] = "bytes-content"
+	xout['a'] = x
+	xout['long-name'] = np.int64(1024)
+	xout['long-name'] = np.int64(1024)
+	xout['b'] = (1, 2, 3)
+	xout['c'] = (complex(n**2) for n in (1, 2, 3))
+	xout['e'] = (n % 2 == 0 for n in range(8))
+	xout.close()
+
+	xin = xmat.MapStreamIn.byte(xout.dstream.buf)
+	xin.encoding = 'utf-8'
+	print(xin)
+	for key in xin.keys():
+		print(f'{key:12} {str(type(xin[key])):24} {xin[key]}')
+
+
 def main():
-	sample_8()
+	sample_9()
 
 
 if __name__ == '__main__':
