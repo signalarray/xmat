@@ -183,3 +183,81 @@ Types supported
      - double
      - 16
      - 0x63
+
+
+Benchmark
+---------
+
+.. list-table:: benchmark
+   :header-rows: 1
+
+   * - Size
+     - 1K
+     - 4K
+     - 16K
+     - 64K
+     - 256K
+     - 1024K
+   * - **C++**: char
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - C++: double
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - C++: complex double
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - **Python**: char
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - Python: double
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - Python: complex double
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - **Matlab**: char
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - Matlab: double
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024
+   * - Matlab: complex double
+     - 1
+     - 4
+     - 16
+     - 64
+     - 256
+     - 1024

@@ -92,8 +92,8 @@ classdef MapStreamOut < handle
       end
 
       if strlength(name) > obj.head.maxname
-        error('xmat.MapStreamOut.setitem(): too long block-name: max := %d, len := %d, name := %s', ...
-          xmat.head.maxname, strlength(name), name);
+        error('xmat.MapStreamOut.setitem(): too long block-name: \nmax-supported := %d, \nlength-provided := %d, \nname := ''%s''', ...
+          obj.head.maxname, strlength(name), name);
       end
       
       % ----

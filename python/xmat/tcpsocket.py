@@ -176,6 +176,7 @@ class TCPService:
 	def __init__(self):
 		self.connections = []
 		self.listeners = []
+
 		self.timeout = None
 
 	def connection(self, address: tuple[str, int]) -> TCPConnection:
@@ -240,9 +241,13 @@ class TCPService:
 			raise ValueError(f"xmat.TCPService.wait(mode, ): wrong mode: {mode}. \
 													expected ('listeners', 'connections', 'all')")
 		if mode in (self.ALL, self.LISTENERS):
-			listeners_, *_ = select.select(self.listeners, [], [], timeout)
+			dict_ = {item.socket: item for item in self.listeners}
+			listeners_, *_ = select.select(dict_.keys(), [], [], timeout)
+			listeners_ = [dict_[it] for it in listeners_]
 		if mode in (self.ALL, self.CONNECTIONS):
-			connections, *_ = select.select(self.connections, [], [], timeout)
+			dict_ = {item.socket: item for item in self.connections}
+			connections_, *_ = select.select(dict_.keys(), [], [], timeout)
+			connections_ = [dict_[it] for it in connections_]
 		return listeners_, connections_
 
 	def process(self, mode: str = ALL, timeout: float = None) -> list[TCPConnection]:

@@ -90,16 +90,20 @@ classdef MapStreamIn < handle
       A = obj.ids.read(bd.numel(), bd.tid);
 
       % process morder and shape
+      shape_ = bd.shape;
+      if length(shape_) == 1
+        shape_ = [1 shape_];
+      end
       if bd.morder == 'C'
         if obj.flipshape
-          bd.shape = flip(bd.shape);
-          A = reshape(A, bd.shape);
+          shape_ = flip(shape_);
+          A = reshape(A, shape_);
         else
-          A = reshape(A, flip(bd.shape));
-          A = permute(A, length(bd.shape):-1:1);
+          A = reshape(A, flip(shape_));
+          A = permute(A, length(shape_):-1:1);
         end
       elseif bd.morder == 'F'
-        A = reshape(A, bd.shape);
+        A = reshape(A, shape_);
       else
         error("");
       end
@@ -113,6 +117,10 @@ classdef MapStreamIn < handle
 
     function flag = has(field_name)
       flag = isfield(obj.map, field_name);
+    end
+
+    function keys_ = keys(obj)
+      keys_ = keys(obj.map);
     end
 
     function scan(obj)

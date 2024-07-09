@@ -40,7 +40,6 @@ classdef TCPSocket < handle
     function obj = TCPSocket(socket)
       obj.socket = socket;
       obj.isserver = isfield(socket, "ConnectionChangedFcn");
-      obj.set_callback(true);
     end
 
     function delete(obj)
@@ -82,86 +81,8 @@ classdef TCPSocket < handle
       write(obj.socket, xout.ods.buf, 'uint8');
     end
 
-    
-    % recv-async 
-    % ----------------------
-    function xout = pop(obj)
-      xout = [];
-      if ~isempty(obj.content__)  % lock auto callback while poping out element.
-        obj.set_callback(false);  % because it's unclear about raices with obj.content__.
-        xout = obj.content__{1};
-        obj.content__(1) = [];
-        obj.set_callback(true);
-      end
-    end
 
-    function n = numel(obj)
-      n = length(obj.content__);
-    end
-
-    function res = isempty(obj)
-      res = isempty(obj.content__);
-    end
-    
-    function dt = wait(obj, timeout)
-      % Parameters:
-      % -----------
-      % timeout: numeric, optional(default:=inf)
-      %   time for waiting, sec.
-      
-      if nargin < 2
-        timeout = 10.0;
-      end
-
-      t0 = tic;
-      while obj.isempty() && toc(t0) < timeout
-        pause(1e-4);
-      end
-      if obj.isempty()
-        error('xmat.TCPSocket.wait(): timeout %.2g sec exceeds\n', timeout);
-      end      
-      dt = toc(t0);
-    end
-  end
-
-
-  methods (Access=protected)
-    function set_callback(obj, mode)
-      if mode
-        if obj.socket.BytesAvailableFcnMode ~= "off"
-          warning("xmat.TCPSocket.callback is already set");
-        else
-          configureCallback(obj.socket, "byte", xmat.XHead.nbytes(), @obj.process_msg);
-        end
-      else
-        configureCallback(obj.socket, "off");
-      end
-    end
-
-
-    function count = process_msg(obj, ~, ~)
-      count = 0;
-      while obj.socket.NumBytesAvailable
-        xin = obj.recv_();
-
-        if isempty(obj.callback)
-          % store in the queue
-          obj.content__{end+1} = xin;
-          count = count + 1;
-
-          if obj.flag_verbal
-            fprintf('package received:\n')
-            xin.print();
-          end
-        else 
-          % callback
-          obj.callback(xin);
-        end
-      end
-    end
-
-
-    function xin = recv_(obj)
+    function xin = recv(obj)
       xin = xmat.MapStreamIn.byte();
 
       hbuf = read(obj.socket, xmat.XHead.nbytes(), 'char');
@@ -179,14 +100,38 @@ classdef TCPSocket < handle
       xin.push_buffer(uint8(dbuf(:)));
       xin.scan_data();
     end
+
+
+    function res = isempty(obj)
+      res = obj.socket.NumBytesAvailable == 0;
+    end
+    
+    function wait(obj, timeout)
+      % Parameters:
+      % -----------
+      % timeout: numeric, optional(default:=inf)
+      %   time for waiting, sec.
+      
+      if nargin < 2
+        timeout = 10.0;
+      end
+
+      t0 = tic;
+      while obj.isempty() && toc(t0) < timeout
+        pause(1e-4);
+      end
+      if obj.isempty()
+        error('xmat.TCPSocket.wait(): timeout %.2g sec exceeds\n', timeout);
+      end
+    end
   end
 end
 
 
 function server_connection_fcn(src, ~)
 if src.Connected
-  fprintf('xmat.TCPSocket.server connection accepted: %s\n', src.ClientAddress);
+  fprintf('xmat.TCPSocket.server: connection accepted. ip: %s\n', src.ClientAddress);
 else
-  fprintf('xmat.TCPSocket.server desconnected\n');
+  fprintf('xmat.TCPSocket.server: desconnected\n');
 end
 end
