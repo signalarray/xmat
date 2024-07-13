@@ -1,6 +1,6 @@
-file_out = fullfile(temp_data_folder(), 'example_matlab.xmat');
+file_in = fullfile(temp_data_folder(), 'example_matlab.xmat');
 
-xin = xmat.MapStreamIn.file(file_out);
+xin = xmat.MapStreamIn.file(file_in);
 xin.print()
 
 a = xin.getitem('a')
