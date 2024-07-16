@@ -4,6 +4,9 @@ Save xmat-file
 save variable as a key-value pair in a file
 stop"""
 
+import common
+
+# start example
 import pathlib
 import numpy as np
 import numpy.random

@@ -8,8 +8,20 @@ CMake
 
 Python
 -------
+**PyPi**
 
-setup.py
+`xmat` runs under Python 3.10+ and awailable on `pypi.org`. To install it with pip, run the following:
+
+``pip install xmat``
+
+
+**Install from source code**
+
+``pip install %{path_to_xmat_repository}/python``
+
+Development mode. See some `help <https://setuptools.pypa.io/en/latest/userguide/development_mode.html>`_.
+
+``pip install -e %{path_to_xmat_repository}/python``
 
 
 Matlab
@@ -19,10 +31,10 @@ You only need to download/clone the xmat-repository to a folder, and add the fol
 
 .. code-block:: matlab
 
-  addpath('../xmat/matlab')
+  addpath('%{path_to_xmat_repository}/matlab')
 
 Another way. Create a `startup.m <https://www.mathworks.com/help/matlab/ref/startup.html>`_ file in the `userpath` folder, which is on the MATLAB search path
-and type ``addpath('../xmat/matlab')`` in this file. MATLAB will execute this file every time it starts. The way to find your `userpath` is to call
+and type ``addpath('%{path_to_xmat_repository}/matlab')`` in this file. MATLAB will execute this file every time it starts. The way to find your `userpath` is to call
 `userpath <https://www.mathworks.com/help/matlab/ref/userpath.html>`_ standard function.
 
 

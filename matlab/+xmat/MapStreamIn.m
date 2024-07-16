@@ -91,7 +91,9 @@ classdef MapStreamIn < handle
 
       % process morder and shape
       shape_ = bd.shape;
-      if length(shape_) == 1
+      if isempty(shape_)
+        shape_ = [1 1];
+      elseif length(shape_) == 1
         shape_ = [1 shape_];
       end
       if bd.morder == 'C'

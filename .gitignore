@@ -2,10 +2,11 @@
 /data/*
 !/data/file.txt
 temp_*
+*.tar.gz
 
 # char `/` mark just folders in the root of project
-/build*/
-/_build*/
+build*/
+_build*/
 
 # every folder with name like: _folder/, folder/_folder
 # **/_*
@@ -22,3 +23,4 @@ temp_*
 # python
 **/__pycache__/
 *.ini
+*.egg-info/

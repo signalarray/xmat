@@ -20,7 +20,6 @@ from pathlib import Path
 import warnings
 
 import numpy as np
-import scipy.stats
 
 
 class Endian(Enum):
@@ -469,10 +468,10 @@ DTYPEOUT = {
 	np.uint8(int('0x12', 0)): xtype.int32,
 	np.uint8(int('0x13', 0)): xtype.int64,
 
-	np.uint8(int('0x20', 0)): xtype.uint8,
-	np.uint8(int('0x21', 0)): xtype.uint16,
-	np.uint8(int('0x22', 0)): xtype.uint32,
-	np.uint8(int('0x23', 0)): xtype.uint64,
+	np.uint8(int('0x30', 0)): xtype.uint8,
+	np.uint8(int('0x31', 0)): xtype.uint16,
+	np.uint8(int('0x32', 0)): xtype.uint32,
+	np.uint8(int('0x33', 0)): xtype.uint64,
 
 	np.uint8(int('0x52', 0)): xtype.float32,
 	np.uint8(int('0x53', 0)): xtype.float64,
@@ -487,12 +486,12 @@ DTYPEIN = {type_: tid for tid, type_ in DTYPEOUT.items()}
 
 class XHead:
 	def __init__(self):
-		self.sign: bytes = SIGNATURE										# Sign
-		self.bom: np.uint16 = BOM												# BOM
-		self.total: np.uint64 = np.uint64(0)						# Total Size
-		self.sizeof_int: np.uint8 = SIZEOF_XSIZE_T			# I
-		self.maxndim: np.uint8 = MAX_NDIM								# S
-		self.maxname: np.uint8 = MAX_NAME								# B
+		self.sign: bytes = SIGNATURE                 # Sign
+		self.bom: np.uint16 = BOM                    # BOM
+		self.total: np.uint64 = np.uint64(0)         # Total Size
+		self.sizeof_int: np.uint8 = SIZEOF_XSIZE_T   # I
+		self.maxndim: np.uint8 = MAX_NDIM            # S
+		self.maxname: np.uint8 = MAX_NAME            # B
 
 	def dump(self, ods: DStream):
 		if len(self.sign) != SIGN_SIZE:
@@ -547,12 +546,12 @@ class XBlock:
 	def __init__(self):
 		self.pos: int = 0
 
-		self.morder: str = 'C'														# o
-		self.tid: np.uint8 = np.uint8(0)								# t
-		self.ndim: np.uint8 = np.uint8(0)								# s
-		self.namelen: np.uint8 = np.uint8(0)						# b
-		self.shape: tuple[np.uint64] = tuple()					# Shape[ndim]
-		self.name: str = ''															# Block Name[namelen]
+		self.morder: str = 'C'                     # o
+		self.tid: np.uint8 = np.uint8(0)           # t
+		self.ndim: np.uint8 = np.uint8(0)          # s
+		self.namelen: np.uint8 = np.uint8(0)       # b
+		self.shape: tuple[np.uint64] = tuple()     # Shape[ndim]
+		self.name: str = ''                        # Block Name[namelen]
 
 	def dumpvar(self, x, name, ods: DStream = None, numpy_move = False):
 		self.namelen = len(name)

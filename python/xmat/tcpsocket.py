@@ -189,6 +189,7 @@ class TCPService:
 		Parameters:
 			address: (IP: str, PORT: int)
 			bakclog: int, = 4
+				number of pending connections the queue will hold
 		"""
 		listener = TCPListener(address, backlog)
 		self.listeners.append(listener)

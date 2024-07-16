@@ -2,6 +2,7 @@ import common
 import sys
 import numpy as np
 import xmat
+import xmat.benchmark
 
 
 def sample_0():
@@ -18,11 +19,9 @@ def sample_0():
 	tcps.close()
 
 
-def main():
-	num = int(sys.argv[1])
-	f = (sample_0, )
-	f[num]()
+def sample_1():
+	xmat.benchmark.native_tcp_client()
 
 
 if __name__ == '__main__':
-	main()
+	sample_1()

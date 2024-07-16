@@ -7,7 +7,7 @@ Use in Python
 
 .. literalinclude:: ../../python/examples/example_xmat_format_file_save.py
   :language: python
-  :lines: 7-
+  :lines: 10-
 
 
 .. include:: ../../python/examples/example_xmat_format_file_load.py
@@ -16,7 +16,7 @@ Use in Python
 
 .. literalinclude:: ../../python/examples/example_xmat_format_file_load.py
   :language: python
-  :lines: 7-
+  :lines: 10-
 
 
 .. include:: ../../python/examples/example_xmat_tcp_server.py
@@ -25,7 +25,7 @@ Use in Python
 
 .. literalinclude:: ../../python/examples/example_xmat_tcp_server.py
   :language: python
-  :lines: 7-
+  :lines: 10-
 
 
 .. include:: ../../python/examples/example_xmat_tcp_client.py
@@ -34,4 +34,4 @@ Use in Python
 
 .. literalinclude:: ../../python/examples/example_xmat_tcp_client.py
   :language: python
-  :lines: 7-
+  :lines: 10-

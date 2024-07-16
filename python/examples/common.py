@@ -2,32 +2,21 @@ import sys
 from pathlib import Path
 
 from importlib.util import find_spec
+
+# import xmat.benchmark
+
 if not find_spec('xmat'):
+	print('xmat module added to search-path manually')
 	sys.path.append(str(Path(__file__).parents[1]))
 
 
 temp_data_folder: Path = Path(__file__).parents[2].joinpath('data')
 
 
-def main():
-	p = Path(__file__)
-	print(p)
-	print(p.parent)
-	print(p.parents[2])
-	print(p.name)
-	print(p.stem)
-	print(p.suffix)
-
-	p1 = p.parent.joinpath('subdir')
-	print(p)
-	print(p1)
-
-	print('temp_data_folder: ', temp_data_folder)
-
-	file = open(temp_data_folder.joinpath('out.xmat'), 'w')
-	file.write('asd')
-	file.close()
+def sample_0():
+	# xmat.benchmark.native_tcp_server()
+	pass
 
 
 if __name__ == '__main__':
-	main()
+	sample_0()
